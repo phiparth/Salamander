@@ -1,0 +1,13 @@
+work/
+runs/
+structures/
+*.pyc
+__pycache__/
+*.npz
+*.npy
+*.fxout
+*_Repair.pdb
+molecules/
+rotabase.txt
+.venv/
+.DS_Store
