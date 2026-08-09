@@ -2,7 +2,7 @@
 """Run all four steps end to end.
 
     python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/era.pdb \
-           --out work/era --cons-thresh 0.80 --wt-ratio 1.20 --ddg-cut 0.05 --repair
+           --out work/era --cons-thresh 0.80 --wt-ratio 1.20 --ddg-cut 0.5 --repair
 
 Each step writes its own JSON into --out, so you can stop after any step, change one
 parameter and rerun only what follows. Embeddings and FoldX results are cached.
@@ -45,7 +45,7 @@ def main():
     # steps 3-4
     p.add_argument("--foldx")
     p.add_argument("--chain", default="A")
-    p.add_argument("--ddg-cut", type=float, default=0.05)
+    p.add_argument("--ddg-cut", type=float, default=0.5)
     p.add_argument("--repair", action="store_true")
     p.add_argument("--jobs", type=int, default=6)
     p.add_argument("--no-combined", action="store_true")

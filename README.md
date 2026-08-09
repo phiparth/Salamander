@@ -1,6 +1,9 @@
-# strip2 — thermostable protein design
+# salamander
 
-Redesign a protein for higher melting temperature, without touching its active site.
+**Evolution-guided thermostable protein design.** Redesign a protein for a higher
+melting temperature without touching its active site.
+
+*Named for the creature that was said to live in fire.*
 
 `strip2` is a per-residue classifier on frozen [ProtT5](https://github.com/agemagician/ProtTrans)
 embeddings. It learns from evolution rather than from thermodynamics: given a family of
@@ -129,12 +132,13 @@ cheap single-point screen separates them.
 The PDB is checked against the query sequence before any compute is spent; a numbering
 mismatch aborts with the offending residues listed.
 
-> **On `--ddg-cut 0.05`**: this is strict. FoldX's own error on a single-point ΔΔG is around
-> 1 kcal/mol and its run-to-run noise is 0.2–0.5, so a 0.05 threshold sits well inside the
-> uncertainty — which mutations fall either side is partly determined by noise. It yields a
-> small, safe design. We validated **0.5** empirically across five proteins (it kept ~53% of
-> set1\* mutations and every design came out net stabilising). Use 0.05 when you want to be
-> conservative, 0.5 when you want more mutations, and treat neither as a physical constant.
+> **On `--ddg-cut 0.5`**: this default is the one we validated. Across five proteins it kept
+> ~53% of the set1\* mutations and **every design came out net stabilising** — see
+> `docs/method.md`. Note that FoldX's own error on a single-point ΔΔG is around 1 kcal/mol
+> and its run-to-run noise is 0.2–0.5, so a threshold much below 0.5 sits inside the
+> uncertainty and which mutations fall either side becomes partly noise-determined. Raise it
+> (1.0) for a larger, bolder design; lowering it much below 0.5 buys precision you cannot
+> actually measure.
 
 ### Step 4 — final sequence
 
@@ -151,19 +155,57 @@ TPH1. If you quote a ΔΔG for the design, quote this one.
 
 ## Training
 
-The distributed head is `models/head_strip2.pt`. To reproduce the base model from scratch:
+`models/head_strip2.pt` is produced in two phases: a prokaryote-only base model, then a
+yeast transfer. Both are included.
+
+### Phase A — the prok base model
 
 ```bash
-# 1. pairs from the clustered, Tm-annotated table  (excludes yeast → the "prok" model)
+# A1. pairs from the clustered, Tm-annotated table, yeast excluded
 python training/build_pairs.py --csv training/data/combined_clustered_proteins.csv \
        --work_dir runs/prok --exclude_taxid 559292
 
-# 2. cache ProtT5 embeddings for every unique low-Tm sequence
+# A2. cache ProtT5 embeddings for every unique low-Tm sequence
 python training/embed_sequences.py --work_dir runs/prok --plm /path/to/prot_t5_xl
 
-# 3. train
+# A3. train
 python training/train_prok.py --work_dir runs/prok --epochs 30
 ```
+
+### Phase B — the yeast transfer that makes strip2
+
+```bash
+# B1. yeast -> hotter-homolog pairs
+python training/build_yeast_pairs.py --csv training/data/combined_clustered_proteins.csv \
+       --work_dir runs/yeast --taxid 559292
+
+# B2. embed the yeast sequences
+python training/embed_sequences.py --work_dir runs/yeast --plm /path/to/prot_t5_xl
+
+# B3. fine-tune the prok head -> strip2
+python training/train_strip2_transfer.py --work_dir runs/yeast \
+       --pretrained runs/prok/head.pt --epochs 60 --out models/head_strip2.pt
+```
+
+**Why the transfer is built this way.** Yeast Tm in this table is *organism-level* — every
+*S. cerevisiae* protein carries the same value — so yeast-vs-yeast pairs have zero ΔTm and
+teach nothing. `build_yeast_pairs.py` therefore builds **cross-organism** pairs in which the
+featurised member is a yeast protein and the partner is a hotter homolog from the same
+cluster.
+
+**Why only one block is frozen.** strip2 is the `strip2_block+clf` configuration:
+
+```
+block 1     Linear(2064,512)   FROZEN      keeps the general ProtT5 -> residue mapping
+block 2     Linear(512,512)    retrained
+classifier  Linear(512,20)     retrained
+```
+
+The yeast pair set is far smaller than the prokaryote one. Letting the whole network move
+overfits it; freezing the first projection preserves what the large set taught and adapts
+only the head. `--frozen-blocks 0` gives a full fine-tune and `--frozen-blocks 2` a
+classifier-only linear probe — that second one is the "strip1" variant, which scored lower
+(val_acc 0.215 vs strip2's 0.256).
 
 **How the supervision works.** No measured ΔΔG or ΔTm is ever used as a label. Within a
 cluster of homologs, a cool protein and a hotter one are paired; at every non-conserved
@@ -207,10 +249,12 @@ src/strip2/core.py            embedding, checkpoint loading, positional encoding
 src/strip2/orthologs.py       OrthoDB and blastp ortholog retrieval
 pipeline/step1..step4         the four stages
 pipeline/run_pipeline.py      all four in sequence
-training/build_pairs.py       stage 1 — pairs.json
-training/embed_sequences.py   stage 2 — ProtT5 cache
-training/train_prok.py        stage 3 — the trainer
-training/data/                the training table
+training/build_pairs.py       phase A1 — prokaryote pairs.json
+training/embed_sequences.py   A2/B2 — ProtT5 embedding cache
+training/train_prok.py        A3 — the base trainer
+training/build_yeast_pairs.py B1 — yeast→hotter transfer pairs
+training/train_strip2_transfer.py  B3 — prok → strip2 fine-tune
+training/data/                the clustered, Tm-annotated table
 docs/method.md                design rationale and benchmark results
 ```
 

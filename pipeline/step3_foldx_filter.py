@@ -9,7 +9,7 @@ Gly->Pro at -2.85 kcal/mol on ERa, Gln->Pro at +4.60 on hDnmt3a. This step is wh
 those two cases.
 
     python pipeline/step3_foldx_filter.py --work work/era --pdb structures/era.pdb \
-           --foldx /path/to/foldx --ddg-cut 0.05 --repair --jobs 6
+           --foldx /path/to/foldx --ddg-cut 0.5 --repair --jobs 6
 
 The PDB must contain the same sequence as the query (verified before anything runs).
 --repair runs FoldX RepairPDB first; skip it only if your structure is already repaired.
@@ -61,7 +61,7 @@ def main():
     p.add_argument("--pdb", required=True, help="structure matching the query sequence")
     p.add_argument("--foldx", help="FoldX executable (else $FOLDX, else search C:/FoldX)")
     p.add_argument("--chain", default="A")
-    p.add_argument("--ddg-cut", type=float, default=0.05,
+    p.add_argument("--ddg-cut", type=float, default=0.5,
                    help="keep mutations with single-point ddG <= this (kcal/mol)")
     p.add_argument("--repair", action="store_true", help="run RepairPDB first")
     p.add_argument("--jobs", type=int, default=6, help="parallel FoldX processes")
