@@ -1,4 +1,4 @@
-# salamander
+# Salamander
 
 **Evolution-guided thermostable protein design.** Redesign a protein for a higher
 melting temperature without touching its active site.
