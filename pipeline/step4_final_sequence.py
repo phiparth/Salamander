@@ -12,6 +12,7 @@ import argparse, glob, json, os, shutil, subprocess, sys, time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 from strip2 import foldx as foldx_find  # noqa: E402  (`fx` is a local below)
+from strip2 import core as fxcore  # noqa: E402
 
 
 def dif_values(d):
@@ -38,8 +39,8 @@ def main():
     p.add_argument("--name", default=None, help="name for the output FASTA record")
     a = p.parse_args()
 
-    cons = json.load(open(os.path.join(a.work, "conserved.json")))
-    s1 = json.load(open(os.path.join(a.work, "set1star.json")))
+    cons = fxcore.read_stage(a.work, "conserved.json", "step1_conserved_sites.py")
+    s1 = fxcore.read_stage(a.work, "set1star.json", "step2_design_set1star.py")
     fx_path = os.path.join(a.work, "foldx_filter.json")
     have_fx = os.path.exists(fx_path)
     fx = json.load(open(fx_path)) if have_fx else None

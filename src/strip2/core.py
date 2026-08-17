@@ -4,13 +4,41 @@
 Only what the strip2 pipeline needs: ProtT5 embedding, checkpoint loading, the MLP head,
 and the positional encoding that must match training exactly.
 """
+import json
 import os
+import sys
+
 import numpy as np
 
 AA20 = "ACDEFGHIKLMNPQRSTVWY"
 AA2IDX = {a: i for i, a in enumerate(AA20)}
 IDX2AA = {i: a for a, i in AA2IDX.items()}
 DEFAULT_PLM = os.environ.get("PLM", "Rostlab/prot_t5_xl_half_uniref50-enc")
+
+
+def read_stage(work, name, produced_by, hint=""):
+    """Load a JSON file an earlier step should have written, or explain what is missing.
+
+    Each step reads the previous step's output by filename. When a step fails, it can leave
+    the work folder existing but empty - so the next step used to die on FileNotFoundError,
+    which points at this step rather than the one that actually failed.
+    """
+    path = os.path.join(work, name)
+    if os.path.isfile(path):
+        with open(path, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    why = "the folder does not exist" if not os.path.isdir(work) else (
+        "the folder is empty" if not os.listdir(work) else
+        "the folder holds: " + ", ".join(sorted(os.listdir(work))[:8]))
+    msg = ["%s is missing from %s - %s." % (name, work, why),
+           "",
+           "%s is written by %s, so that step did not finish." % (name, produced_by),
+           "Scroll up to its output: it will have printed the reason before stopping.",
+           "Re-run it and check it ends with a 'wrote ...' line before continuing."]
+    if hint:
+        msg += ["", hint]
+    sys.exit("\n".join(msg))
 
 
 def clean_seq(seq):

@@ -18,7 +18,7 @@ import argparse, json, os, sys
 import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-from strip2.core import embed, load_head, residue_probs, AA20, AA2IDX  # noqa: E402
+from strip2.core import embed, load_head, residue_probs, read_stage, AA20, AA2IDX  # noqa: E402
 
 
 def main():
@@ -32,7 +32,8 @@ def main():
     p.add_argument("--emb-cache", default=None, help="npz to cache the embedding in")
     a = p.parse_args()
 
-    cons = json.load(open(os.path.join(a.work, "conserved.json")))
+    cons = read_stage(a.work, "conserved.json", "step1_conserved_sites.py",
+                      "If step 1 stopped on an OrthoDB HTTP 500, re-run it with --gene <GENE>.")
     seq, L = cons["query"], cons["L"]
     frozen = set(cons["frozen_0based"])
     print("query %s  L=%d  frozen=%d  mutable=%d"

@@ -92,7 +92,8 @@ def main():
                    help="space-separated 1-based residue numbers to freeze regardless")
     a = p.parse_args()
 
-    os.makedirs(a.out, exist_ok=True)
+    # the output folder is created only once there is something to write into it - an empty
+    # work folder left behind by a failed run makes step 2 look like the broken step
     log = lambda *m: print(*m, flush=True)
 
     recs = read_fasta(a.query)
@@ -148,6 +149,7 @@ def main():
             percol[r]["frozen"] = True
     frozen0 = sorted(set(frozen0))
 
+    os.makedirs(a.out, exist_ok=True)
     write_fasta(os.path.join(a.out, "orthologs.fasta"), homologs)
     write_fasta(os.path.join(a.out, "alignment.fasta"), rows)
     out = {"query_name": qname, "query": qseq, "L": len(qseq),

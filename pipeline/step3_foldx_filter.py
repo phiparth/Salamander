@@ -18,6 +18,7 @@ import argparse, glob, json, os, shutil, subprocess, sys, time, collections
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 from strip2 import foldx as fx  # noqa: E402
+from strip2 import core as fxcore  # noqa: E402
 
 THREE2ONE = {"ALA": "A", "CYS": "C", "ASP": "D", "GLU": "E", "PHE": "F", "GLY": "G",
              "HIS": "H", "ILE": "I", "LYS": "K", "LEU": "L", "MET": "M", "ASN": "N",
@@ -77,7 +78,7 @@ def main():
         print("  warning: neither rotabase.txt nor molecules/ is beside the executable;"
               " FoldX 4 will not run", flush=True)
 
-    s1 = json.load(open(os.path.join(a.work, "set1star.json")))
+    s1 = fxcore.read_stage(a.work, "set1star.json", "step2_design_set1star.py")
     muts = s1["set1star_mutations"]
     seq = s1["query"]
     if not muts:
