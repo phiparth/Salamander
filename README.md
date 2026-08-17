@@ -45,13 +45,22 @@ alone.
 
 | | What | Where to get it | Size | Needed for |
 |---|---|---|---|---|
-| ✅ | **Python 3.9 – 3.12** | [python.org/downloads](https://www.python.org/downloads/) | — | everything |
+| ✅ | **Python 3.9 or newer** | [python.org/downloads](https://www.python.org/downloads/) | — | everything |
 | ✅ | **Git** | [git-scm.com/downloads](https://git-scm.com/downloads) | — | cloning this repo |
+| ✅ | **Visual C++ Redistributable x64** — **Windows only** | [aka.ms/vs/17/release/vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe) | ~25 MB | PyTorch will not start without it |
 | ✅ | **ProtT5 model** | [huggingface.co/Rostlab/prot_t5_xl_half_uniref50-enc](https://huggingface.co/Rostlab/prot_t5_xl_half_uniref50-enc) | ~2.5 GB | step 2, all training |
 | ✅ | **FoldX 5** | [foldxsuite.crg.eu](https://foldxsuite.crg.eu/) — free academic licence | ~50 MB | steps 3 and 4 |
 | ✅ | **A PDB structure** | step 0 fetches it for you, or [rcsb.org](https://www.rcsb.org/) | ~1 MB | steps 3 and 4 |
 | ⬜ | GPU with CUDA | — | — | optional, ~10× faster embedding |
 | ⬜ | Internet | — | — | steps 0 and 1 only |
+
+> **Windows users: install the Visual C++ Redistributable before anything else.** PyTorch's
+> compiled libraries link against `msvcp140.dll` and `vcruntime140_1.dll`, which Windows does
+> not include and the PyTorch download does not bundle. Without it, `pip install` reports
+> complete success and then every command fails with
+> `OSError: [WinError 1114] ... Error loading ...\torch\lib\c10.dll`. Reinstalling PyTorch
+> does not help. It is a 25 MB installer, it needs no reboot, and it is harmless if you
+> already have it — most machines with Visual Studio, MATLAB or Anaconda do.
 
 **Disk space**: about 3 GB, almost all ProtT5.
 **Time for one protein**: 2–5 min for steps 1–2, then 10–60 min for steps 3–4. `RepairPDB` in
@@ -120,6 +129,10 @@ Install the dependencies (a few minutes, mostly PyTorch):
 ```bash
 pip install -r requirements.txt
 ```
+
+**Windows:** if you skipped the [Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)
+in section 1, install it now. `pip` will not warn you — the failure only appears at the next
+step, as `WinError 1114`.
 
 Verified from an empty environment on **Python 3.14.5**, where these pins resolve to
 `torch 2.13.0+cpu` and `transformers 4.57.6`, and ProtT5's `.bin` weights load. The
