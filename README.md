@@ -266,38 +266,79 @@ licence.
 Pick the build for your operating system and take the newest **FoldX 5**. The filename encodes
 a release date, e.g. `foldx_20251231.zip`.
 
-### 4d. Unzip, keeping everything together
+### 4d. Unzip it anywhere — keep the contents together
+
+**The location does not matter.** Unzip it wherever you like: `foldx_windows` on your Desktop,
+`foldx5_Windows` in Downloads, a folder on drive D. Salamander finds it (4e). What *does*
+matter is that the files stay in one folder:
 
 ```
-C:\FoldX\
-├── foldx_20251231.exe      the executable (name varies by release)
-├── molecules\              REQUIRED - do not move, rename, or delete
-└── rotabase.txt            FoldX 4 only; FoldX 5 ignores it
+<anywhere>/foldx_windows/
+├── foldx_1_20270131.exe    the executable (the name varies by release)
+├── molecules/              REQUIRED - do not move, rename, or delete
+└── rotabase.txt            FoldX 4 only; FoldX 5 has this data built in
 ```
 
 **The `molecules/` folder is what people get wrong.** FoldX fails silently or produces nothing
-if it is not sitting beside the executable.
+if it is not sitting beside the executable. If you unzipped only the `.exe`, go back and
+extract the rest into the same folder.
 
-### 4e. Verify it runs
+### 4e. Find it and check it runs
 
 ```bash
-"C:\FoldX\foldx_20251231.exe" --version
+python find_foldx.py
+```
+
+This searches your disk for the executable whatever the folder and file are called, confirms
+it starts, checks that `molecules/` and `rotabase.txt` are beside it, and prints the one line
+that points Salamander at it. Expected output:
+
+```
+  executable : C:\FoldX\foldx_1_20270131.exe
+  rotabase.txt: present
+  molecules  : present
+  Running it ...
+    OK: FoldX 5.1 (c)
+```
+
+If it finds nothing, widen the search — this scans every fixed drive and takes a few minutes:
+
+```bash
+python find_foldx.py --deep
+```
+
+If you would rather keep FoldX somewhere predictable, it can move a copy for you, bringing
+`molecules/` and `rotabase.txt` along:
+
+```bash
+python find_foldx.py --copy-to C:/FoldX
+```
+
+To check by hand instead, note the flag is **`-version`, one dash**. FoldX reads `--version`
+as an option needing a value and replies `the required argument for option '--version' is
+missing` — while still printing its banner, so the wrong flag looks like it worked:
+
+```bash
+"C:\FoldX\foldx_1_20270131.exe" -version
 ```
 
 ### 4f. Tell Salamander where it is
+
+`find_foldx.py` prints these lines with your real path already filled in — copy from there
+rather than editing the examples below.
 
 > **Run ONE of the next three blocks — whichever matches your shell. Not all three.**
 
 **Either — Windows, Command Prompt** — permanent, reopen the terminal afterwards:
 
 ```bash
-setx FOLDX "C:\FoldX\foldx_20251231.exe"
+setx FOLDX "C:\FoldX\foldx_1_20270131.exe"
 ```
 
 **Or — Windows, PowerShell** — current session only:
 
 ```powershell
-$env:FOLDX = "C:/FoldX/foldx_20251231.exe"
+$env:FOLDX = "C:/FoldX/foldx_1_20270131.exe"
 ```
 
 **Or — macOS / Linux**:
@@ -306,8 +347,10 @@ $env:FOLDX = "C:/FoldX/foldx_20251231.exe"
 export FOLDX=~/foldx/foldx
 ```
 
-Or pass `--foldx <full path to executable>` on each command. On Windows, if you set neither,
-Salamander picks the newest `.exe` in `C:/FoldX/` automatically.
+Or pass `--foldx <full path to executable>` on each command. **If you set neither, steps 3
+and 4 run the same search `find_foldx.py` does** and use what they find, so setting the
+variable is an optimisation, not a requirement. Resolution order is: `--foldx`, then `$FOLDX`,
+then `PATH`, then the disk search.
 
 > **Expired-licence error?** FoldX 4 licences ended 2025-12-31; you need FoldX 5. If you have
 > both, **rename** `rotabase.txt` to `rotabase.txt.bak` — FoldX 5 rejects the FoldX 4 rotabase
@@ -493,7 +536,10 @@ python pipeline/run_pipeline.py --query my_protein.fasta --pdb structures/mine.p
 | [`pipeline/step3_foldx_filter.py`](pipeline/step3_foldx_filter.py) | FoldX per-mutation stability filter |
 | [`pipeline/step4_final_sequence.py`](pipeline/step4_final_sequence.py) | Assemble + score the whole design |
 | [`pipeline/run_pipeline.py`](pipeline/run_pipeline.py) | Runs steps 1–4 in sequence |
+| [`check_env.py`](check_env.py) | Diagnose a broken install — run this first when anything fails |
+| [`find_foldx.py`](find_foldx.py) | Locate the FoldX executable wherever you unzipped it |
 | [`src/strip2/core.py`](src/strip2/core.py) | Embedding, checkpoint loading, positional encoding |
+| [`src/strip2/foldx.py`](src/strip2/foldx.py) | The FoldX search, shared by steps 3–4 and `find_foldx.py` |
 | [`src/strip2/orthologs.py`](src/strip2/orthologs.py) | OrthoDB and NCBI blastp retrieval |
 | [`training/`](training/) | Retraining from scratch — see section 10 |
 | [`training/data/combined_clustered_proteins.csv`](training/data/combined_clustered_proteins.csv) | 40 MB clustered, Tm-annotated training table |
@@ -564,7 +610,7 @@ python pipeline/run_pipeline.py --query my_protein.fasta --pdb structures/mine.p
 |---|---|---|
 | `--work` | *required* | the folder from steps 1–2 |
 | `--pdb` | *required* | structure matching the query numbering |
-| `--foldx` | `$FOLDX`, else `C:/FoldX/*.exe` | FoldX executable |
+| `--foldx` | `$FOLDX`, else `PATH`, else found on disk | FoldX executable |
 | `--chain` | `A` | which chain in the PDB |
 | `--ddg-cut` | `0.5` | keep mutations with ΔΔG ≤ this (kcal/mol) |
 | `--repair` | off | run `RepairPDB` first — **use it on the first run** |
@@ -581,7 +627,7 @@ python pipeline/run_pipeline.py --query my_protein.fasta --pdb structures/mine.p
 |---|---|---|
 | `--work` | *required* | the folder from steps 1–3 |
 | `--combined` | off | also score the whole design as one multi-mutant |
-| `--foldx` | `$FOLDX` | FoldX executable |
+| `--foldx` | `$FOLDX`, else `PATH`, else found on disk | FoldX executable |
 | `--name` | `<query>_strip2_design` | name for the FASTA record |
 
 ### `run_pipeline.py`
@@ -707,9 +753,22 @@ likelihood:
 Either the download did not finish, or you are not in the `Salamander` folder — `models/prot_t5`
 is a *relative* path, so it only resolves from the repo root. `check_env.py` reports both.
 
-**`FoldX not found - pass --foldx or set $FOLDX`**
-Set the environment variable (section 4f) or pass `--foldx <path>`. Use the full path
-*including* the executable filename, not just the folder.
+**`FoldX not found`**
+The automatic search came up empty. Run it on its own to see where it looked:
+
+```bash
+python find_foldx.py --deep
+```
+
+That covers every fixed drive. If it still finds nothing, FoldX is not unzipped, or it is on a
+network or removable drive — point straight at it:
+
+```bash
+python find_foldx.py --path D:/wherever/foldx_windows/foldx_1_20270131.exe
+```
+
+Then use the `FOLDX` line it prints, or pass `--foldx <path>`. The path must include the
+executable filename, not just the folder.
 
 **`RepairPDB produced nothing - check the FoldX licence and rotabase`**
 Either the licence expired (FoldX 4 ended 2025-12-31 — get FoldX 5), or `molecules/` is missing

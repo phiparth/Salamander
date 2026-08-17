@@ -16,6 +16,9 @@ The PDB must contain the same sequence as the query (verified before anything ru
 """
 import argparse, glob, json, os, shutil, subprocess, sys, time, collections
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+from strip2 import foldx as fx  # noqa: E402
+
 THREE2ONE = {"ALA": "A", "CYS": "C", "ASP": "D", "GLU": "E", "PHE": "F", "GLY": "G",
              "HIS": "H", "ILE": "I", "LYS": "K", "LEU": "L", "MET": "M", "ASN": "N",
              "PRO": "P", "GLN": "Q", "ARG": "R", "SER": "S", "THR": "T", "VAL": "V",
@@ -59,7 +62,7 @@ def main():
     p = argparse.ArgumentParser(description="FoldX single-point ddG filter")
     p.add_argument("--work", required=True)
     p.add_argument("--pdb", required=True, help="structure matching the query sequence")
-    p.add_argument("--foldx", help="FoldX executable (else $FOLDX, else search C:/FoldX)")
+    p.add_argument("--foldx", help="FoldX executable; else $FOLDX, else found automatically (see find_foldx.py)")
     p.add_argument("--chain", default="A")
     p.add_argument("--ddg-cut", type=float, default=0.5,
                    help="keep mutations with single-point ddG <= this (kcal/mol)")
@@ -67,13 +70,12 @@ def main():
     p.add_argument("--jobs", type=int, default=6, help="parallel FoldX processes")
     a = p.parse_args()
 
-    exe = a.foldx or os.environ.get("FOLDX")
-    if not exe:
-        cand = [c for c in glob.glob("C:/FoldX/*.exe") if "yasara" not in c.lower()]
-        exe = max(cand, key=os.path.getmtime) if cand else None
-    if not exe or not os.path.exists(exe):
-        sys.exit("FoldX not found - pass --foldx or set $FOLDX")
+    exe = fx.resolve(a.foldx)
     print("FoldX: %s" % exe, flush=True)
+    comp = fx.companions(exe)
+    if not comp["rotabase.txt"] and not comp["molecules"]:
+        print("  warning: neither rotabase.txt nor molecules/ is beside the executable;"
+              " FoldX 4 will not run", flush=True)
 
     s1 = json.load(open(os.path.join(a.work, "set1star.json")))
     muts = s1["set1star_mutations"]

@@ -10,6 +10,9 @@ for the design, quote this one, not the sum.
 """
 import argparse, glob, json, os, shutil, subprocess, sys, time
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
+from strip2 import foldx as foldx_find  # noqa: E402  (`fx` is a local below)
+
 
 def dif_values(d):
     f = [x for x in os.listdir(d) if x.startswith("Dif_") and x.endswith(".fxout")]
@@ -31,7 +34,7 @@ def main():
     p.add_argument("--work", required=True)
     p.add_argument("--combined", action="store_true",
                    help="also score the full design as one multi-mutant in FoldX")
-    p.add_argument("--foldx", help="FoldX executable (else $FOLDX, else C:/FoldX)")
+    p.add_argument("--foldx", help="FoldX executable; else $FOLDX, else found automatically (see find_foldx.py)")
     p.add_argument("--name", default=None, help="name for the output FASTA record")
     a = p.parse_args()
 
@@ -51,10 +54,7 @@ def main():
 
     combined = None
     if a.combined and have_fx and muts:
-        exe = a.foldx or os.environ.get("FOLDX")
-        if not exe:
-            cand = [c for c in glob.glob("C:/FoldX/*.exe") if "yasara" not in c.lower()]
-            exe = max(cand, key=os.path.getmtime) if cand else None
+        exe = foldx_find.resolve(a.foldx, required=False)
         if not exe:
             print("FoldX not found - skipping the combined score", flush=True)
         else:
