@@ -77,13 +77,20 @@ cd Salamander
 
 Create an isolated Python environment so this does not disturb your other projects.
 
+> **You need Python 3.9 or newer.** On Windows, do **not** type `python` for this step. Other
+> software (MGLTools, ArcGIS, Cygwin, Anaconda) puts its own `python` on your PATH, and it is
+> often Python 2.7 — which cannot run any of this. `py -3` asks Windows for a real Python 3.
+> Check with `py -3 --version` before continuing.
+
+> **The next four blocks are two pairs. Run the pair for YOUR operating system — not all four.**
+
 **Windows** — create it:
 
 ```bash
-python -m venv .venv
+py -3 -m venv .venv
 ```
 
-**Windows** — activate it:
+**Windows** — then activate it:
 
 ```bash
 .venv\Scripts\activate
@@ -95,13 +102,14 @@ python -m venv .venv
 python3 -m venv .venv
 ```
 
-**macOS / Linux** — activate it:
+**macOS / Linux** — then activate it:
 
 ```bash
 source .venv/bin/activate
 ```
 
-Your prompt should now start with `(.venv)`. Upgrade pip:
+Your prompt should now start with `(.venv)`. From here on, `python` means the one inside
+`.venv`, which is the correct one. Upgrade pip:
 
 ```bash
 python -m pip install --upgrade pip
@@ -116,11 +124,18 @@ pip install -r requirements.txt
 Confirm it worked:
 
 ```bash
-python pipeline/step1_conserved_sites.py --help
+python check_env.py
 ```
 
-You should see usage text. If you get `ModuleNotFoundError`, the virtual environment is not
-active — run the `activate` line again.
+This checks your Python version, your working directory, every required package, and the
+ProtT5 weights, then prints `OK` or a `FAIL` line naming the fix. **Run it whenever anything
+below goes wrong** — it reports the cause instead of leaving you with a traceback.
+
+At this stage it is expected to pass sections 1–3 and report ProtT5 as missing; you install
+that next.
+
+If it reports `Python 2.7 is too old`, the virtual environment is not active: your prompt is
+missing `(.venv)`. Run the `activate` line again, in this same terminal.
 
 > **Every command from here on assumes you are inside the `Salamander` folder with `(.venv)`
 > active.** If you close the terminal, `cd` back and re-run `activate`.
@@ -151,19 +166,24 @@ Download the model into `models/prot_t5/`:
 python -c "from huggingface_hub import snapshot_download; snapshot_download('Rostlab/prot_t5_xl_half_uniref50-enc', local_dir='models/prot_t5')"
 ```
 
-Tell Salamander where it is — **Windows (PowerShell)**:
+Now tell Salamander where it is.
+
+> **Run ONE of the next three blocks — whichever matches your shell. Not all three.**
+> Prompt starts with `PS C:\>` → PowerShell. Prompt starts with `C:\>` → Command Prompt.
+
+**Either — Windows, PowerShell:**
 
 ```powershell
 $env:PLM = "models/prot_t5"
 ```
 
-**Windows (Command Prompt)**:
+**Or — Windows, Command Prompt:**
 
 ```bash
 set PLM=models/prot_t5
 ```
 
-**macOS / Linux**:
+**Or — macOS / Linux:**
 
 ```bash
 export PLM=models/prot_t5
@@ -172,10 +192,28 @@ export PLM=models/prot_t5
 Confirm it loads:
 
 ```bash
-python -c "from transformers import T5EncoderModel; T5EncoderModel.from_pretrained('models/prot_t5'); print('ProtT5 OK')"
+python check_env.py
 ```
 
+The last section of the report lists every ProtT5 file with its size and then actually loads
+the model. `pytorch_model.bin` must be roughly **2.2–2.5 GB**. If it is a few kilobytes the
+download produced a Git LFS pointer instead of the weights — delete `models/prot_t5` and run
+the download command again.
+
 Alternatively skip the variable and pass `--plm models/prot_t5` on each command.
+
+### Two version traps
+
+ProtT5 is distributed as a `pytorch_model.bin` file — there is no `model.safetensors` in that
+repository. That makes it sensitive to library versions in two ways, and `requirements.txt`
+already pins around both. Only read this if you installed `transformers` or `torch` by hand.
+
+- **`transformers` 5.x removed support for `.bin` checkpoints.** ProtT5 will not load on it.
+  Stay on 4.x: `pip install "transformers>=4.30,<5"`
+- **`transformers` 4.56+ refuses `.bin` files when `torch` is older than 2.6**, as a
+  `torch.load` security measure. Either upgrade torch, or hold transformers below 4.56.
+
+`python check_env.py` detects both combinations and tells you which one you have.
 
 ---
 
@@ -230,19 +268,21 @@ if it is not sitting beside the executable.
 
 ### 4f. Tell Salamander where it is
 
-**Windows (Command Prompt)** — permanent, reopen the terminal afterwards:
+> **Run ONE of the next three blocks — whichever matches your shell. Not all three.**
+
+**Either — Windows, Command Prompt** — permanent, reopen the terminal afterwards:
 
 ```bash
 setx FOLDX "C:\FoldX\foldx_20251231.exe"
 ```
 
-**Windows (PowerShell)** — current session only:
+**Or — Windows, PowerShell** — current session only:
 
 ```powershell
 $env:FOLDX = "C:/FoldX/foldx_20251231.exe"
 ```
 
-**macOS / Linux**:
+**Or — macOS / Linux**:
 
 ```bash
 export FOLDX=~/foldx/foldx
@@ -603,9 +643,32 @@ cluster, so no homolog of a training protein appears in validation.
 
 ## 11. Troubleshooting
 
-**`ModuleNotFoundError: No module named 'torch'`**
-The virtual environment is not active. Re-run the `activate` line from section 2, then
-`pip install -r requirements.txt`.
+**First, run this. It diagnoses most of what follows:**
+
+```bash
+python check_env.py
+```
+
+**`ModuleNotFoundError: No module named 'transformers'` (or `'torch'`), or a traceback from
+the ProtT5 check in section 3**
+
+Almost always one of two things, and `check_env.py` distinguishes them:
+
+1. **The virtual environment is not active.** Your prompt does not show `(.venv)`. Activation
+   only applies to the terminal you ran it in — open a new tab and it is gone. Re-run the
+   `activate` line from section 2 in *this* terminal.
+2. **`python` is not Python 3.** On Windows, MGLTools, ArcGIS, Cygwin and others install their
+   own `python` on your PATH, sometimes Python **2.7**, which fails on every command here.
+   Check with `python --version`. If it is not 3.9+, use `py -3` in place of `python`, or
+   activate the virtual environment, which fixes the name for that terminal.
+
+**`No module named 'transformers'` with `ImportError` phrased in the old style**
+That wording (rather than `ModuleNotFoundError`) is itself the tell: only Python 2 says
+`ImportError: No module named x`. You are running Python 2.7. See point 2 above.
+
+**`OSError: models/prot_t5 does not appear to have a file named config.json`**
+Either the download did not finish, or you are not in the `Salamander` folder — `models/prot_t5`
+is a *relative* path, so it only resolves from the repo root. `check_env.py` reports both.
 
 **`FoldX not found - pass --foldx or set $FOLDX`**
 Set the environment variable (section 4f) or pass `--foldx <path>`. Use the full path
