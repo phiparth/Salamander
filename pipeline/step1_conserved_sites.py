@@ -38,21 +38,57 @@ def fetch_blast(seq, n, log, min_identity, length_band, email):
 
 
 def align(query_name, query, homologs, log):
-    """One MSA over query + orthologs. FAMSA, falling back to Biopython if unavailable."""
+    """One MSA over query + orthologs. FAMSA, falling back to Biopython if unavailable.
+
+    Both aligners are compiled C++ extensions, so on Windows both fail together when the
+    Visual C++ runtime is absent - and the failure arrives as ImportError("DLL load failed"),
+    which reads like a missing package. Catching everything and naming the real cause is the
+    difference between a two-minute fix and an evening.
+    """
     try:
         from pyfamsa import Aligner, Sequence
         recs = [Sequence(query_name.encode(), query.encode())]
         recs += [Sequence(n.encode(), s.encode()) for n, s in homologs]
         aln = Aligner(guide_tree="upgma").align(recs)
         return [(r.id.decode(), r.sequence.decode()) for r in aln]
-    except ImportError:
-        log("pyfamsa not installed - falling back to pairwise alignment")
-        from Bio import pairwise2
+    except Exception as e:  # noqa: BLE001 - ImportError, DLL failures, or a FAMSA crash
+        log("pyfamsa unavailable (%s: %s)" % (type(e).__name__, e))
+        log("falling back to pairwise alignment, which is approximate")
+
+    rows = None
+    try:                                               # Biopython >= 1.80
+        from Bio.Align import PairwiseAligner
+        al = PairwiseAligner(mode="global", match_score=2, mismatch_score=-1,
+                             open_gap_score=-10, extend_gap_score=-0.5)
         rows = [(query_name, query)]
         for nm, s in homologs:
-            a = pairwise2.align.globalms(query, s, 2, -1, -10, -0.5, one_alignment_only=True)[0]
-            rows.append((nm, a.seqB))
-        return rows
+            rows.append((nm, str(al.align(query, s)[0][1])))
+    except Exception as e:                             # noqa: BLE001
+        try:                                           # Biopython < 1.84
+            from Bio import pairwise2
+            rows = [(query_name, query)]
+            for nm, s in homologs:
+                a = pairwise2.align.globalms(query, s, 2, -1, -10, -0.5,
+                                             one_alignment_only=True)[0]
+                rows.append((nm, a.seqB))
+        except Exception as e2:                        # noqa: BLE001
+            msg = "%s / %s" % (e, e2)
+            hint = ""
+            if "DLL load failed" in msg or "1114" in msg:
+                hint = ("\n\n  Both aligners failed to load their compiled libraries, which"
+                        "\n  on Windows means the Visual C++ Redistributable is missing."
+                        "\n  Install it, then open a NEW terminal and re-run:"
+                        "\n    https://aka.ms/vs/17/release/vc_redist.x64.exe"
+                        "\n  Run 'python check_env.py' to confirm.")
+            sys.exit("no working aligner: pyfamsa and Biopython both failed.\n  %s%s"
+                     % (msg, hint))
+
+    # independent pairwise alignments can differ in length; conserved_columns needs a grid
+    width = max(len(s) for _, s in rows)
+    if len({len(s) for _, s in rows}) > 1:
+        log("  padding %d pairwise rows to %d columns" % (len(rows), width))
+        rows = [(n, s.ljust(width, "-")) for n, s in rows]
+    return rows
 
 
 def conserved_columns(rows, cons_thresh):

@@ -71,8 +71,12 @@ for rel in ("pipeline/step1_conserved_sites.py", "src/strip2/core.py", "requirem
 
 # ---- 3. dependencies ----------------------------------------------------------------
 print("\n[3] Python packages")
+# pyfamsa and Bio are compiled extensions, like torch - they fail together when the
+# Visual C++ runtime is missing, and step 1 needs one of them to build its alignment
 need = [("torch", "PyTorch"), ("transformers", "Transformers"), ("numpy", "NumPy"),
-        ("pandas", "pandas"), ("sentencepiece", "SentencePiece")]
+        ("pandas", "pandas"), ("sentencepiece", "SentencePiece"),
+        ("pyfamsa", "FAMSA aligner, used by step 1"),
+        ("Bio", "Biopython, step 1's fallback aligner")]
 versions = {}
 dll_trouble = []
 for mod, label in need:
