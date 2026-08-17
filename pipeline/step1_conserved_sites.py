@@ -9,7 +9,9 @@ site intact - in the ERa/hAChE benchmarks PROSS never mutated inside this band e
            --out work/era --cons-thresh 0.80 --n-orthologs 10
 
 Ortholog source (--source):
-    orthodb   OrthoDB orthologs via the UniProt/OrthoDB REST route (default)
+    orthodb   OrthoDB orthologs via the OrthoDB REST API (default). Identify the family
+              with --gene or --og; without either, this needs OrthoDB's /blast endpoint,
+              which is currently failing on their server.
     blast     NCBI blastp, one hit per genus
     local     skip search, use --family (a FASTA you supply)
 

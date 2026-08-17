@@ -416,25 +416,29 @@ Run this to confirm the install works. **It does not produce a usable design** �
 before the structure filter, so the mutation list still contains the structurally destructive
 picks that step 3 exists to remove. Treat the output as a smoke test, then do 6b.
 
-Freeze the conserved sites:
+Freeze the conserved sites. **Use this form** — `--gene` names the family explicitly:
 
 ```bash
-python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era
+python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era --gene ESR1
 ```
 
-> **If that fails with `OrthoDB /blast is not responding` / HTTP 500**, it is an outage on
-> OrthoDB's side, not your install — `/blast` is the one endpoint that runs an alignment on
-> their server, and it goes down while the rest of the API stays up. It was returning 500 for
-> every version (`v11`, `v12`, `current`) when this was last checked. Use the gene name
-> instead, which goes through an endpoint that works:
+> **Why `--gene` and not just `--query`?** Without it, step 1 identifies the family by sending
+> the sequence to OrthoDB's `/blast` endpoint — **and that endpoint is currently returning
+> HTTP 500.** It is the only one that runs an alignment on their server, and it fails while
+> `/search`, `/genesearch` and `/fasta` all answer normally; every API version (`v11`, `v12`,
+> `current`) gives the same 500. So it is an outage on their side, not a problem with your
+> install, and nothing at this end can fix it.
+>
+> Once `/blast` recovers you can drop `--gene` and the plain form works again:
 >
 > ```bash
-> python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era --gene ESR1
+> python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era
 > ```
 >
-> Other routes: `--og 4385266at2759` for a known orthogroup,
+> Other routes that avoid `/blast`: `--og 4385266at2759` for a specific orthogroup (this also
+> lets you choose the taxonomic level — see [step 1's options](#step-1--step1_conserved_sitespy)),
 > `--source blast --email you@institution.edu` for NCBI blastp, or
-> `--source local --family my_orthologs.fasta` to supply your own.
+> `--source local --family my_orthologs.fasta` to supply your own sequences.
 
 Propose mutations:
 
@@ -495,10 +499,11 @@ python pipeline/step0_get_structure.py --uniprot YOUR_ACCESSION --query my_prote
 ```
 
 **Step 1 — freeze the conserved sites.** Reads your FASTA; writes `conserved.json`,
-`alignment.fasta`, `orthologs.fasta`:
+`alignment.fasta`, `orthologs.fasta`. Pass `--gene` with your protein's gene symbol —
+without it this needs OrthoDB's `/blast`, which is **currently down with HTTP 500**:
 
 ```bash
-python pipeline/step1_conserved_sites.py --query my_protein.fasta --out work/mine --cons-thresh 0.80 --n-orthologs 10
+python pipeline/step1_conserved_sites.py --query my_protein.fasta --out work/mine --gene YOUR_GENE --cons-thresh 0.80 --n-orthologs 10
 ```
 
 If OrthoDB finds nothing, or you are offline, supply your own ortholog FASTA instead:

@@ -39,6 +39,8 @@ def main():
     p.add_argument("--length-band", type=float, default=2.0)
     p.add_argument("--extra-freeze", default="")
     p.add_argument("--email")
+    p.add_argument("--gene", help="gene name; avoids OrthoDB /blast (see step 1)")
+    p.add_argument("--og", help="OrthoDB orthogroup id; avoids OrthoDB /blast")
     # step 2
     p.add_argument("--p-min", type=float, default=0.10)
     p.add_argument("--wt-ratio", type=float, default=1.20)
@@ -62,6 +64,10 @@ def main():
         s1 += ["--email", a.email]
     if a.extra_freeze:
         s1 += ["--extra-freeze", a.extra_freeze]
+    if a.gene:
+        s1 += ["--gene", a.gene]
+    if a.og:
+        s1 += ["--og", a.og]
     run("step1_conserved_sites.py", s1)
 
     s2 = ["--work", a.out, "--model", a.model, "--p-min", str(a.p_min),
