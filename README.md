@@ -422,6 +422,20 @@ Freeze the conserved sites:
 python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era
 ```
 
+> **If that fails with `OrthoDB /blast is not responding` / HTTP 500**, it is an outage on
+> OrthoDB's side, not your install — `/blast` is the one endpoint that runs an alignment on
+> their server, and it goes down while the rest of the API stays up. It was returning 500 for
+> every version (`v11`, `v12`, `current`) when this was last checked. Use the gene name
+> instead, which goes through an endpoint that works:
+>
+> ```bash
+> python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era --gene ESR1
+> ```
+>
+> Other routes: `--og 4385266at2759` for a known orthogroup,
+> `--source blast --email you@institution.edu` for NCBI blastp, or
+> `--source local --family my_orthologs.fasta` to supply your own.
+
 Propose mutations:
 
 ```bash
@@ -589,6 +603,15 @@ python pipeline/run_pipeline.py --query my_protein.fasta --pdb structures/mine.p
 | `--length-band` | `2.0` | keep orthologs within ×2 of query length |
 | `--extra-freeze` | — | force-freeze residues you know matter, e.g. `"25 159 175"` (1-based) |
 | `--email` | — | required by NCBI when using `--source blast` |
+| `--gene` | — | gene name, e.g. `ESR1`. Resolves the family through OrthoDB `/search`, skipping `/blast` |
+| `--og` | — | orthogroup id, e.g. `4385266at2759`. Goes straight to the members list |
+
+> **`--og` also lets you choose the taxonomic level, which matters more than it looks.** The
+> number after `at` is the level: `at7742` is vertebrates, `at2759` all eukaryotes. On the ERα
+> example, the eukaryote group froze **66 of 250** residues and the vertebrate group froze
+> **124** — nearly double, from the same query and the same threshold. A deeper level means
+> more distant orthologs, less agreement, and so fewer frozen positions and a more aggressive
+> design. Pick the level that matches the conservation you actually want to respect.
 
 > With 10 orthologs, conservation is quantised to steps of 0.1 — so `--cons-thresh 0.80` and
 > `0.85` give **identical** frozen sets. Raise `--n-orthologs` to 20–30 for finer control.
@@ -752,6 +775,24 @@ likelihood:
 **`OSError: models/prot_t5 does not appear to have a file named config.json`**
 Either the download did not finish, or you are not in the `Salamander` folder — `models/prot_t5`
 is a *relative* path, so it only resolves from the repo root. `check_env.py` reports both.
+
+**`OrthoDB API failed (HTTP Error 500)` / `OrthoDB /blast is not responding`**
+
+An outage on OrthoDB's side. `/blast` is the only endpoint that runs a sequence alignment on
+their server, and it fails independently of the rest of the API — `/search`, `/genesearch` and
+`/fasta` keep working, and every API version (`v11`, `v12`, `current`) returns the same 500,
+which is how you can tell it is theirs and not yours. Step 1 now prints the routes around it
+rather than a traceback. Fastest is the gene name:
+
+```bash
+python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era --gene ESR1
+```
+
+If you have no gene name, NCBI blastp finds orthologs independently. Slower, 1–7 minutes:
+
+```bash
+python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era --source blast --email you@institution.edu
+```
 
 **`FoldX not found`**
 The automatic search came up empty. Run it on its own to see where it looked:

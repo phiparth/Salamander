@@ -22,11 +22,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from strip2.core import read_fasta, write_fasta, clean_seq, AA20  # noqa: E402
 
 
-def fetch_orthodb(seq, n, log, min_identity, length_band):
+def fetch_orthodb(seq, n, log, min_identity, length_band, og=None, gene=None):
     """OrthoDB orthologs, one sequence per genus."""
     from strip2.orthologs import orthodb_orthologs
     return orthodb_orthologs(seq, n=n, min_identity=min_identity,
-                             length_band=length_band, log=log)
+                             length_band=length_band, log=log, og=og, gene=gene)
 
 
 def fetch_blast(seq, n, log, min_identity, length_band, email):
@@ -82,6 +82,10 @@ def main():
     p.add_argument("--length-band", type=float, default=2.0,
                    help="keep orthologs whose length is within [1/x, x] times the query")
     p.add_argument("--email", help="contact address for NCBI blastp (--source blast)")
+    p.add_argument("--og", help="OrthoDB orthogroup id, e.g. 4385266at2759; skips the "
+                               "sequence search, which is the endpoint that breaks")
+    p.add_argument("--gene", help="gene name, e.g. ESR1; resolves the family through "
+                                 "OrthoDB /search instead of /blast")
     p.add_argument("--extra-freeze", default="",
                    help="space-separated 1-based residue numbers to freeze regardless")
     a = p.parse_args()
@@ -100,11 +104,18 @@ def main():
             sys.exit("--source local requires --family")
         homologs = [(n, s) for n, s in read_fasta(a.family) if s != qseq]
     elif a.source == "orthodb":
-        homologs = fetch_orthodb(qseq, a.n_orthologs, log, a.min_identity, a.length_band)
+        homologs = fetch_orthodb(qseq, a.n_orthologs, log, a.min_identity, a.length_band,
+                                 og=a.og, gene=a.gene)
     else:
         homologs = fetch_blast(qseq, a.n_orthologs, log, a.min_identity, a.length_band, a.email)
     if not homologs:
-        sys.exit("no orthologs found - supply your own with --source local --family FILE")
+        sys.exit("no orthologs found.\n"
+                 "  If the message above says OrthoDB /blast is not responding, that is an\n"
+                 "  outage on their side, not a problem with your install. Use any of:\n"
+                 "    --gene <GENE NAME>            resolve the family by name\n"
+                 "    --og <ORTHOGROUP ID>          e.g. --og 4385266at2759\n"
+                 "    --source blast --email you@institution.edu\n"
+                 "    --source local --family my_orthologs.fasta")
     log("using %d orthologs" % len(homologs))
 
     rows = align(qname, qseq, homologs, log)

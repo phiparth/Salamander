@@ -58,8 +58,20 @@ def _one_per_genus(members, query, n, min_identity, length_band, log):
     return out[:n]
 
 
-def orthodb_orthologs(query, n=10, min_identity=0.30, length_band=2.0, log=print):
-    """OrthoDB v12 REST: /blast -> gene, /genesearch -> orthogroups, /fasta -> members."""
+def orthodb_orthologs(query, n=10, min_identity=0.30, length_band=2.0, log=print,
+                      og=None, gene=None):
+    """OrthoDB v12 REST: /blast -> gene, /genesearch -> orthogroups, /fasta -> members.
+
+    Two ways to skip the /blast step:
+
+        og    an orthogroup id such as 4385266at2759 - goes straight to /fasta
+        gene  a gene name such as ESR1 - resolved through /search
+
+    Both exist because /blast is the fragile part. It is the only endpoint that has to run
+    an alignment server-side, and it has returned HTTP 500 for extended periods while the
+    rest of the API stayed up. When that happens there is nothing to fix at this end, so
+    the useful thing is a route around it.
+    """
     import json as _json
     query = clean_seq(query)
 
@@ -68,18 +80,44 @@ def orthodb_orthologs(query, n=10, min_identity=0.30, length_band=2.0, log=print
             urllib.request.Request(ORTHODB + path, headers=UA), timeout=60).read().decode(),
             "OrthoDB API", log)
 
-    log("[ortho] OrthoDB sequence search (%d aa) ..." % len(query))
-    b = _json.loads(api("/blast?seq=" + urllib.parse.quote(query)))
-    if b.get("status") != "ok" or not isinstance(b.get("gene"), dict):
-        log("[ortho] OrthoDB found no gene match")
-        return []
-    gid = b["gene"]["gene_id"]["param"]
-    log("[ortho] matched %s; fetching orthogroups ..." % b["gene"]["gene_id"].get("id"))
-    time.sleep(1.1)                                    # OrthoDB rate limit is 1 req/s
-    ogs = list(dict.fromkeys(re.findall(r"\b\d+at\d+\b", api("/genesearch?query=" + gid))))
-    if not ogs:
-        log("[ortho] no orthogroups returned")
-        return []
+    if og:
+        ogs = [og]
+        log("[ortho] using orthogroup %s directly (skipping the sequence search)" % og)
+    elif gene:
+        log("[ortho] OrthoDB gene-name search for %r ..." % gene)
+        try:
+            d = _json.loads(api("/search?query=" + urllib.parse.quote(gene)))
+        except Exception as e:  # noqa: BLE001 - reported, not raised
+            log("[ortho] OrthoDB /search failed: %s" % e)
+            return []
+        ogs = [x for x in (d.get("data") or []) if re.match(r"^\d+at\d+$", str(x))]
+        if not ogs:
+            log("[ortho] no orthogroups matched the gene name %r" % gene)
+            return []
+        log("[ortho] %d orthogroup(s) matched: %s" % (len(ogs), ", ".join(ogs[:4])))
+    else:
+        log("[ortho] OrthoDB sequence search (%d aa) ..." % len(query))
+        try:
+            b = _json.loads(api("/blast?seq=" + urllib.parse.quote(query)))
+        except Exception as e:  # noqa: BLE001 - a server-side outage, not our bug
+            log("[ortho] OrthoDB /blast is not responding: %s" % e)
+            log("[ortho] That endpoint runs the alignment on their server and fails")
+            log("[ortho] independently of the rest of the API. Ways around it:")
+            log("[ortho]   --gene ESR1                 look the family up by gene name")
+            log("[ortho]   --og 4385266at2759          use a known orthogroup id")
+            log("[ortho]   --source blast --email you@inst.edu    use NCBI blastp instead")
+            log("[ortho]   --source local --family my_orthologs.fasta   supply your own")
+            return []
+        if b.get("status") != "ok" or not isinstance(b.get("gene"), dict):
+            log("[ortho] OrthoDB found no gene match")
+            return []
+        gid = b["gene"]["gene_id"]["param"]
+        log("[ortho] matched %s; fetching orthogroups ..." % b["gene"]["gene_id"].get("id"))
+        time.sleep(1.1)                                # OrthoDB rate limit is 1 req/s
+        ogs = list(dict.fromkeys(re.findall(r"\b\d+at\d+\b", api("/genesearch?query=" + gid))))
+        if not ogs:
+            log("[ortho] no orthogroups returned")
+            return []
 
     best = None
     for og in ogs[:4]:                                 # try a few levels, keep the most diverse
