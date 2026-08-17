@@ -121,6 +121,11 @@ Install the dependencies (a few minutes, mostly PyTorch):
 pip install -r requirements.txt
 ```
 
+Verified from an empty environment on **Python 3.14.5**, where these pins resolve to
+`torch 2.13.0+cpu` and `transformers 4.57.6`, and ProtT5's `.bin` weights load. The
+environment is about **0.9 GB** on disk. Do not install `transformers` or `torch` by hand —
+see [the version traps](#two-version-traps) below for why.
+
 Confirm it worked:
 
 ```bash
