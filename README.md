@@ -671,6 +671,25 @@ Almost always one of two things, and `check_env.py` distinguishes them:
 That wording (rather than `ModuleNotFoundError`) is itself the tell: only Python 2 says
 `ImportError: No module named x`. You are running Python 2.7. See point 2 above.
 
+**`OSError: [WinError 1114] A dynamic link library (DLL) initialization routine failed.
+Error loading ...\torch\lib\c10.dll`**
+
+PyTorch installed correctly, but its compiled libraries cannot start. This is a Windows
+system problem, not a Python one — reinstalling torch usually does **not** fix it. In order of
+likelihood:
+
+1. **The Visual C++ Redistributable is missing.** PyTorch links against `msvcp140.dll` and
+   `vcruntime140_1.dll`, which Windows does not include and the wheel does not bundle. Install
+   **[vc_redist.x64.exe](https://aka.ms/vs/17/release/vc_redist.x64.exe)** (x64, from
+   Microsoft), then open a **new** terminal and retry. This is the fix in most cases.
+2. **The CPU has no AVX2.** Current PyTorch wheels assume it and abort while loading
+   `c10.dll`. On such machines, install an older build:
+   `pip install "torch==2.4.1" --index-url https://download.pytorch.org/whl/cpu`
+3. **A partial download.** `pip uninstall torch`, then `pip install -r requirements.txt`.
+4. **Antivirus quarantining the DLLs.** Check its logs for `torch\lib`.
+
+`python check_env.py` tests items 1 and 2 directly and tells you which applies.
+
 **`OSError: models/prot_t5 does not appear to have a file named config.json`**
 Either the download did not finish, or you are not in the `Salamander` folder — `models/prot_t5`
 is a *relative* path, so it only resolves from the repo root. `check_env.py` reports both.

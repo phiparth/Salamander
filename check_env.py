@@ -74,15 +74,81 @@ print("\n[3] Python packages")
 need = [("torch", "PyTorch"), ("transformers", "Transformers"), ("numpy", "NumPy"),
         ("pandas", "pandas"), ("sentencepiece", "SentencePiece")]
 versions = {}
+dll_trouble = []
 for mod, label in need:
     try:
         m = __import__(mod)
         versions[mod] = getattr(m, "__version__", "?")
         ok("%-14s %s" % (mod, versions[mod]))
-    except ImportError:
-        fail("%s (%s) is not installed in THIS interpreter." % (mod, label),
-             "Activate the virtual environment, then:  pip install -r requirements.txt\n"
-             "If the prompt does not show (.venv), activation did not take effect.")
+    except ImportError as e:
+        # a genuinely absent package, or an installed one whose native library will not load
+        msg = str(e)
+        if "DLL" in msg or "dynamic link" in msg:
+            dll_trouble.append(mod)
+            fail("%s is installed but its native libraries will not load: %s" % (mod, msg),
+                 "This is a system library problem, not a Python one. See section [3b].")
+        else:
+            fail("%s (%s) is not installed in THIS interpreter." % (mod, label),
+                 "Activate the virtual environment, then:  pip install -r requirements.txt\n"
+                 "If the prompt does not show (.venv), activation did not take effect.")
+    except OSError as e:
+        # WinError 1114: "A dynamic link library (DLL) initialization routine failed"
+        dll_trouble.append(mod)
+        fail("%s is installed but failed to initialise: %s" % (mod, e),
+             "This is a system library problem, not a Python one. See section [3b].")
+    except Exception as e:  # noqa: BLE001 - report anything rather than traceback
+        fail("%s failed to import: %s: %s" % (mod, type(e).__name__, e),
+             "Unexpected. Send this whole report to whoever maintains the repo.")
+
+# ---- 3b. why a native library would not load (Windows) ----------------------------
+if dll_trouble:
+    print("\n[3b] Native library diagnosis (because %s failed above)"
+          % ", ".join(dll_trouble))
+    import platform
+    bits = platform.architecture()[0]
+    print("      python build : %s on %s" % (bits, platform.machine()))
+    if bits != "64bit":
+        fail("This Python is %s. PyTorch is 64-bit only." % bits,
+             "Install 64-bit Python 3 and rebuild the virtual environment.")
+
+    if sys.platform == "win32":
+        import ctypes
+
+        # torch links against the Visual C++ runtime, which Windows does not ship
+        # and the wheel does not bundle
+        missing_rt = []
+        for dll in ("msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll"):
+            try:
+                ctypes.WinDLL(dll)
+            except OSError:
+                missing_rt.append(dll)
+        if missing_rt:
+            fail("The Visual C++ runtime is missing: %s" % ", ".join(missing_rt),
+                 "THIS IS ALMOST CERTAINLY THE CAUSE. Install the Microsoft Visual C++\n"
+                 "Redistributable (x64), then open a NEW terminal and retry:\n"
+                 "  https://aka.ms/vs/17/release/vc_redist.x64.exe")
+        else:
+            ok("Visual C++ runtime present (msvcp140, vcruntime140, vcruntime140_1).")
+
+        # modern torch wheels are built assuming AVX2
+        try:
+            ipfp = ctypes.windll.kernel32.IsProcessorFeaturePresent
+            avx = bool(ipfp(39))   # PF_AVX_INSTRUCTIONS_AVAILABLE
+            avx2 = bool(ipfp(40))  # PF_AVX2_INSTRUCTIONS_AVAILABLE
+            print("      cpu features : AVX=%s AVX2=%s" % (avx, avx2))
+            if not avx2:
+                fail("This CPU does not support AVX2.",
+                     "Current PyTorch wheels assume AVX2 and abort while loading c10.dll.\n"
+                     "Install an older build that does not:\n"
+                     '  pip install "torch==2.4.1" --index-url https://download.pytorch.org/whl/cpu')
+            else:
+                ok("CPU supports AVX2, which current PyTorch wheels require.")
+        except Exception:  # noqa: BLE001 - diagnostic only
+            print("      cpu features : could not be queried")
+
+        print("      If both checks above are OK, the remaining causes are a partial")
+        print("      download (pip uninstall torch, then reinstall) or antivirus blocking")
+        print("      the DLLs.")
 
 # transformers 5 dropped support for the .bin checkpoints ProtT5 ships as
 tv = versions.get("transformers")
