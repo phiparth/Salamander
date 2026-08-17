@@ -96,21 +96,48 @@ def renumber(text, offset, keep=None, chain=None):
     return "\n".join(out) + "\n"
 
 
-def extract_query(text, res, chain, seq, log):
+def extract_query(text, res, chain, seq, log, max_mismatch=0):
     """Locate the query inside a longer structure and cut it out, renumbered 1..L.
 
     AlphaFold models cover the whole UniProt entry, so a domain query never lines up.
-    Finding the query as a substring of the modelled sequence turns a full-length model
-    into a usable one.
+    Finding the query inside the modelled sequence turns a full-length model into a usable
+    one.
+
+    An exact substring is tried first. With --max-mismatch N, the best-scoring window is
+    accepted if it differs at no more than N positions. That covers the common case of an
+    engineered construct: catalytically dead point mutants (a PTP catalytic Cys->Ser, say)
+    differ from the UniProt entry at a handful of residues but are otherwise the same
+    protein, and the wild-type backbone is a perfectly good template for them.
     """
     nums = sorted(n for c, n in res if c == chain)
     struct_seq = "".join(res[(chain, n)] for n in nums)
     i = struct_seq.find(seq)
+    mism = []
     if i < 0:
-        return None
+        if max_mismatch <= 0 or len(struct_seq) < len(seq):
+            return None
+        best = (-1, -1)
+        for off in range(len(struct_seq) - len(seq) + 1):
+            m = sum(1 for k in range(len(seq)) if struct_seq[off + k] == seq[k])
+            if m > best[0]:
+                best = (m, off)
+        m, i = best
+        n_bad = len(seq) - m
+        if n_bad > max_mismatch:
+            log("  best window differs at %d positions, more than --max-mismatch %d"
+                % (n_bad, max_mismatch))
+            return None
+        mism = [(k + 1, seq[k], struct_seq[i + k])
+                for k in range(len(seq)) if struct_seq[i + k] != seq[k]]
     span = nums[i:i + len(seq)]
     log("  found the query at structure residues %d-%d; extracting and renumbering to 1-%d"
         % (span[0], span[-1], len(seq)))
+    for k, want, got in mism:
+        log("    NOTE position %d: your sequence has %s, the structure has %s"
+            % (k, want, got))
+    if mism:
+        log("    -> %d position(s) differ. FoldX will run, but any mutation AT these" % len(mism))
+        log("       positions is scored against the structure's residue, not yours.")
     return renumber(text, span[0] - 1, keep=set(span), chain=chain)
 
 
@@ -123,6 +150,8 @@ def main():
     p.add_argument("--renumber", action="store_true",
                    help="renumber so the first residue is 1 (fixes domain offsets)")
     p.add_argument("--chain", default="A")
+    p.add_argument("--max-mismatch", type=int, default=0,
+                   help="accept a near-match window differing at up to N positions")
     a = p.parse_args()
     log = lambda *m: print(*m, flush=True)
 
@@ -160,7 +189,7 @@ def main():
 
     # a full-length model against a domain query: cut the query out and renumber it
     if seq and len(res) > len(seq):
-        cut = extract_query(text, res, a.chain, seq, log)
+        cut = extract_query(text, res, a.chain, seq, log, a.max_mismatch)
         if cut:
             text = cut
             res = pdb_seq(text, a.chain)

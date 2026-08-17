@@ -6,6 +6,20 @@ alone.
 
 *Named for the creature that was said to live in fire.*
 
+> ### The structure step is not optional
+>
+> Every published sequence-based thermostability tool — TemStaPro, DeepSTABp, ProLaTherm,
+> TemBERTure, ESMStabP, NOMELT — reads sequence and nothing else. **Salamander's contribution
+> is what happens after the model speaks: every proposed mutation is scored against a real 3D
+> structure in FoldX, and the destabilising ones are thrown away.**
+>
+> That is the whole point, and it is measurable. Before the structure filter, our designs are
+> destabilising on every protein we tested. After it, **all five flip to net stabilising and
+> four of the five beat PROSS** — see [Why the structure filter is the point](#why-the-structure-filter-is-the-point).
+>
+> So: **you need FoldX and you need a PDB.** Steps 1–2 will run without them, but what they
+> emit is a candidate list, not a design. Do not treat it as a result.
+
 ---
 
 ## Contents
@@ -295,9 +309,11 @@ put there gets committed.
 The repo ships the ligand-binding domain of human estrogen receptor α at
 [`examples/era_lbd.fasta`](examples/era_lbd.fasta) (250 residues).
 
-### 6a. Without a structure — steps 1 and 2 only
+### 6a. Install check — steps 1 and 2 only
 
-Works immediately after install; no FoldX, no PDB needed.
+Run this to confirm the install works. **It does not produce a usable design** — it stops
+before the structure filter, so the mutation list still contains the structurally destructive
+picks that step 3 exists to remove. Treat the output as a smoke test, then do 6b.
 
 Freeze the conserved sites:
 
@@ -325,7 +341,10 @@ work/era/
 Step 1 prints e.g. `conserved at >= 0.80 : 119 of 250 residues frozen, 131 mutable`. Step 2
 prints a table of surviving mutations with probabilities.
 
-### 6b. Full run with FoldX
+> On ERα this stage proposes 25 mutations scoring **+1.67 kcal/mol — destabilising**. The
+> structure filter cuts it to 7 mutations at **−6.65**. That gap is why 6a is not a result.
+
+### 6b. Full run with FoldX — the real pipeline
 
 Fetch the structure:
 
@@ -380,8 +399,8 @@ python pipeline/step1_conserved_sites.py --query my_protein.fasta --out work/min
 python pipeline/step2_design_set1star.py --work work/mine
 ```
 
-**Step 3 — drop the destabilising ones.** Reads `set1star.json` + your PDB; writes
-`foldx_filter.json`:
+**Step 3 — drop the destabilising ones. This is the step that makes the design real.** Reads
+`set1star.json` + your PDB; writes `foldx_filter.json`:
 
 ```bash
 python pipeline/step3_foldx_filter.py --work work/mine --pdb structures/mine.pdb --repair --jobs 6
@@ -649,6 +668,44 @@ kcal/mol** on ERα, **Gln→Pro at +4.60** on hDnmt3a. Step 3 separates those ca
 
 Full benchmark results, method comparisons and limitations are in
 **[`docs/method.md`](docs/method.md)**.
+
+### Why the structure filter is the point
+
+Every published sequence-based thermostability method stops at the model's output. Salamander
+does not, and this is the measurable consequence.
+
+**Before and after the FoldX filter**, five human proteins, strip2 designs at the OrthoDB ≥80%
+freeze, FoldX combined ΔΔG in kcal/mol (negative = stabilising):
+
+| protein | before | after | mutations kept | PROSS | beats PROSS |
+|---|---|---|---|---|---|
+| ERα-LBD | +1.67 | **−6.65** | 7 of 25 | −0.60 | **yes, 11×** |
+| TPH1 | +13.32 | **−2.51** | 9 of 22 | −1.69 | **yes** |
+| hAChE | +52.69 | **−14.44** | 29 of 58 | −13.34 | **yes**, with 43% fewer mutations |
+| hSIRT6 | +9.86 | **−5.39** | 14 of 22 | −1.05 | **yes, 5×** |
+| hDnmt3a | +9.93 | **−0.36** | 6 of 11 | −2.49 | no |
+
+Every unfiltered design is destabilising. Every filtered one is stabilising. **Per-mutation
+cost — which is count-normalised, so it cannot be improved just by making fewer changes — goes
+negative in all five.**
+
+**Why the model cannot do this alone.** strip2 learns from evolution, so it correctly learns
+that proline substitutions are a thermostabilising move: real thermophiles carry them. What
+sequence data cannot teach is *where the backbone tolerates one*. The identical substitution
+type sat at both extremes of our single-point measurements:
+
+```
+Gly -> Pro    ERa      G138P    -2.85 kcal/mol     the best mutation in the whole benchmark
+Gln -> Pro    hDnmt3a  Q52P     +4.60 kcal/mol     one of the worst
+```
+
+No sequence model can separate those two. A structure can, in seconds. That is the niche.
+
+**One honest caveat**, also stated in [`docs/method.md`](docs/method.md): the mutations are
+selected using FoldX and then measured with FoldX, so part of that improvement is guaranteed by
+construction. An independent energy function should be used to confirm any specific design —
+Rosetta `ref2015_cart` agreed with FoldX at Spearman 0.942 on the unfiltered benchmark, so it is
+the natural check.
 
 ### Limitations worth knowing
 
