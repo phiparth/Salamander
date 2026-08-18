@@ -21,7 +21,7 @@ Everything that changes the frozen set is a flag: --cons-thresh, --n-orthologs, 
 import argparse, json, os, sys, collections
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
-from strip2.core import read_fasta, write_fasta, clean_seq, AA20  # noqa: E402
+from strip2.core import read_fasta, read_alignment, write_fasta, clean_seq, AA20  # noqa: E402
 
 
 def fetch_orthodb(seq, n, log, min_identity, length_band, og=None, gene=None):
@@ -141,6 +141,9 @@ def main():
     p.add_argument("--length-band", type=float, default=2.0,
                    help="keep orthologs whose length is within [1/x, x] times the query")
     p.add_argument("--email", help="contact address for NCBI blastp (--source blast)")
+    p.add_argument("--alignment", help="a finished MSA in FASTA (Clustal Omega, MAFFT, "
+                                      "MUSCLE, or a colleague's run) containing the query. "
+                                      "Skips both the ortholog search and the aligner.")
     p.add_argument("--aligner", default="auto", choices=["auto", "famsa", "biopython"],
                    help="auto uses FAMSA; 'biopython' skips it, for CPUs where FAMSA's "
                         "SIMD code crashes the process")
@@ -162,6 +165,29 @@ def main():
     qname, qseq = recs[0]
     log("query %s, %d residues" % (qname, len(qseq)))
 
+    if a.alignment:
+        # A finished MSA from anywhere - Clustal Omega, MAFFT, MUSCLE, a colleague's run.
+        # This skips both the ortholog search and the aligner, which is the only way
+        # forward on a machine where FAMSA cannot run at all.
+        rows = read_alignment(a.alignment)
+        if len(rows) < 2:
+            sys.exit("--alignment needs the query plus at least one ortholog, found %d"
+                     % len(rows))
+        widths = {len(s) for _, s in rows}
+        if len(widths) != 1:
+            sys.exit("--alignment rows are not all the same length (%s) - that is not an "
+                     "alignment" % sorted(widths))
+        hit = [i for i, (_, s) in enumerate(rows) if s.replace("-", "") == qseq]
+        if not hit:
+            sys.exit("the query is not in --alignment: no row matches %s once gaps are\n"
+                     "  removed. The alignment must contain the exact --query sequence."
+                     % qname)
+        rows = [(qname, rows[hit[0]][1])] + [r for i, r in enumerate(rows) if i != hit[0]]
+        homologs = [(n, s.replace("-", "")) for n, s in rows[1:]]
+        log("using a supplied alignment: %d sequences, %d columns"
+            % (len(rows), len(rows[0][1])))
+        return finish(a, log, qname, qseq, rows, homologs)
+
     if a.source == "local":
         if not a.family:
             sys.exit("--source local requires --family")
@@ -182,6 +208,15 @@ def main():
     log("using %d orthologs" % len(homologs))
 
     rows = align(qname, qseq, homologs, log, prefer=a.aligner)
+    return finish(a, log, qname, qseq, rows, homologs)
+
+
+def finish(a, log, qname, qseq, rows, homologs):
+    """Conservation, the query mapping, and the three output files.
+
+    Split out of main() so a supplied --alignment can reach it without going
+    through the ortholog search or the aligner.
+    """
     flags, detail = conserved_columns(rows, a.cons_thresh)
 
     # map alignment columns back onto query residue indices

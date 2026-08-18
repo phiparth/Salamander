@@ -63,6 +63,29 @@ def read_fasta(path):
     return out
 
 
+def read_alignment(path):
+    """-> [(name, gapped sequence)], preserving '-' columns.
+
+    read_fasta() runs clean_seq(), which keeps only alphabetic characters and so deletes
+    every gap - fine for a sequence, fatal for an alignment, since the columns are the
+    whole point. Anything that reads an MSA back off disk must come through here.
+    """
+    out, name, buf = [], None, []
+    for ln in open(path, encoding="utf-8"):
+        ln = ln.rstrip("\n\r")
+        if ln.startswith(">"):
+            if name is not None:
+                out.append((name, "".join(buf)))
+            name, buf = ln[1:].strip(), []
+        elif ln.strip():
+            s = "".join(ln.split()).upper()
+            buf.append("".join(("X" if c in "UZOB" else c)
+                               for c in s if c.isalpha() or c in "-."))
+    if name is not None:
+        out.append((name, "".join(buf)))
+    return [(n, s.replace(".", "-")) for n, s in out]
+
+
 def write_fasta(path, records, width=60):
     with open(path, "w", encoding="utf-8") as fh:
         for name, seq in records:

@@ -435,8 +435,22 @@ python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out wo
 > python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era
 > ```
 >
+> **If step 1 stops at `aligning N sequences with FAMSA ...` with no error at all**, FAMSA
+> crashed the process — it is SIMD-compiled and dies outright on CPUs without AVX2, so
+> there is no traceback to read. Check with `python check_env.py`: the `cpu` line reports
+> AVX2. A pre-built alignment of this example ships with the repo, and reproduces the FAMSA
+> result exactly:
+>
+> ```bash
+> python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era --alignment examples/era_lbd_alignment.fasta
+> ```
+>
+> For your own protein, align it anywhere — Clustal Omega, MAFFT, MUSCLE, or a colleague's
+> machine — and pass the result the same way. `--aligner biopython` also exists, but it
+> under-freezes badly (33 residues where FAMSA finds 124) and is for diagnosis only.
+
 > Other routes that avoid `/blast`: `--og 4385266at2759` for a specific orthogroup (this also
-> lets you choose the taxonomic level — see [step 1's options](#step-1--step1_conserved_sitespy)),
+> lets you choose the taxonomic level — see step 1's options in section 9),
 > `--source blast --email you@institution.edu` for NCBI blastp, or
 > `--source local --family my_orthologs.fasta` to supply your own sequences.
 
@@ -564,6 +578,7 @@ python pipeline/run_pipeline.py --query my_protein.fasta --pdb structures/mine.p
 | [`training/data/combined_clustered_proteins.csv`](training/data/combined_clustered_proteins.csv) | 40 MB clustered, Tm-annotated training table |
 | [`docs/method.md`](docs/method.md) | Benchmark results, the proline finding, caveats |
 | [`examples/era_lbd.fasta`](examples/era_lbd.fasta) | Worked example sequence |
+| [`examples/era_lbd_alignment.fasta`](examples/era_lbd_alignment.fasta) | Pre-built MSA for the example, for machines where FAMSA cannot run |
 
 ### Files the pipeline creates in your `--out` folder
 
