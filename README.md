@@ -493,6 +493,23 @@ python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/
 
 **Final result:** `work/era/final.fasta`.
 
+> **`run_pipeline.py` runs step 1 too**, including the OrthoDB search — even if `work/era`
+> already holds a finished `conserved.json`. So it can fail on the OrthoDB outage before it
+> ever reaches FoldX, which is confusing when you only wanted steps 3–4. Two ways round it.
+>
+> Reuse what is already done, and skip any step whose output exists:
+>
+> ```bash
+> python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/era.pdb --out work/era --repair --resume
+> ```
+>
+> Or give it the family up front, so step 1 never calls the failing endpoint. `--gene`,
+> `--og`, `--alignment` and `--aligner` are all forwarded to step 1:
+>
+> ```bash
+> python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/era.pdb --out work/era --repair --gene ESR1
+> ```
+
 ---
 
 ## 7. Run it on your own protein

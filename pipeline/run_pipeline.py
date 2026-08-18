@@ -23,6 +23,20 @@ def run(script, args):
         sys.exit("%s failed with exit code %d" % (script, r.returncode))
 
 
+def skip(n, script, args, produces, resume):
+    """Run a step, or report it already done.
+
+    run_pipeline drives every step, including the ortholog search - so re-running it after
+    a later step failed repeats step 1, and repeats whatever was wrong with it. --resume
+    reuses finished outputs instead.
+    """
+    if resume and os.path.exists(produces):
+        print("\nstep %d: %s already exists, skipping (--resume)"
+              % (n, os.path.basename(produces)), flush=True)
+        return
+    run(script, args)
+
+
 def main():
     p = argparse.ArgumentParser(description="strip2 thermostable design, all four steps")
     p.add_argument("--query", required=True)
@@ -41,6 +55,11 @@ def main():
     p.add_argument("--email")
     p.add_argument("--gene", help="gene name; avoids OrthoDB /blast (see step 1)")
     p.add_argument("--og", help="OrthoDB orthogroup id; avoids OrthoDB /blast")
+    p.add_argument("--alignment", help="a finished MSA; skips the ortholog search AND the "
+                                      "aligner (see step 1)")
+    p.add_argument("--aligner", default="auto", choices=["auto", "famsa", "biopython"])
+    p.add_argument("--resume", action="store_true",
+                   help="skip steps whose output already exists in --out")
     # step 2
     p.add_argument("--p-min", type=float, default=0.10)
     p.add_argument("--wt-ratio", type=float, default=1.20)
@@ -68,13 +87,17 @@ def main():
         s1 += ["--gene", a.gene]
     if a.og:
         s1 += ["--og", a.og]
-    run("step1_conserved_sites.py", s1)
+    if a.alignment:
+        s1 += ["--alignment", a.alignment]
+    if a.aligner != "auto":
+        s1 += ["--aligner", a.aligner]
+    skip(1, "step1_conserved_sites.py", s1, os.path.join(a.out, "conserved.json"), a.resume)
 
     s2 = ["--work", a.out, "--model", a.model, "--p-min", str(a.p_min),
           "--wt-ratio", str(a.wt_ratio)]
     if a.plm:
         s2 += ["--plm", a.plm]
-    run("step2_design_set1star.py", s2)
+    skip(2, "step2_design_set1star.py", s2, os.path.join(a.out, "set1star.json"), a.resume)
 
     if not a.pdb:
         print("\nno --pdb given, stopping after step 2. The set1* design is in "
