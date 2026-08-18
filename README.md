@@ -214,9 +214,19 @@ python check_env.py
 ```
 
 The last section of the report lists every ProtT5 file with its size and then actually loads
-the model. `pytorch_model.bin` must be roughly **2.2–2.5 GB**. If it is a few kilobytes the
-download produced a Git LFS pointer instead of the weights — delete `models/prot_t5` and run
-the download command again.
+the model. `pytorch_model.bin` must be **exactly 2,416,373,051 bytes** — `check_env.py`
+compares against that number, because a partial download is the usual cause of step 2 dying
+with exit code **3221225477** (`0xC0000005`, an access violation): torch reads past the end of
+a truncated file and the process is killed with no Python error at all.
+
+To verify the file by content rather than length:
+
+```bash
+certutil -hashfile models\prot_t5\pytorch_model.bin SHA256
+```
+
+That must print `7f51ba885541c7dc569d46b796af57cc7a2ba7945107dced4f19d1b5ec091157`. If either
+check disagrees, delete `models/prot_t5` and download it again.
 
 Alternatively skip the variable and pass `--plm models/prot_t5` on each command.
 

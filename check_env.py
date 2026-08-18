@@ -253,11 +253,30 @@ else:
              % (len(incomplete), incomplete[0]),
              "The download was interrupted. Delete the folder and download again.")
 
+    # exact published size of Rostlab/prot_t5_xl_half_uniref50-enc pytorch_model.bin.
+    # A truncated download is the usual cause of an access violation (exit code
+    # 3221225477 / 0xC0000005) while loading the model: torch reads past the end of the
+    # file and the process dies with no Python error at all.
+    EXPECT = 2416373051
+    SHA256 = "7f51ba885541c7dc569d46b796af57cc7a2ba7945107dced4f19d1b5ec091157"
     for w in weights:
-        if have[w] < 500:
+        n = int(round(have[w] * 1024.0 * 1024.0))
+        exact = os.path.getsize(os.path.join(found, w))
+        if w == "pytorch_model.bin" and exact != EXPECT:
+            fail("%s is %d bytes; the published file is %d (%+d)."
+                 % (w, exact, EXPECT, exact - EXPECT),
+                 "The download did not complete, so the file is truncated. Delete the\n"
+                 "folder and download it again:\n"
+                 "  rmdir /s /q models\\prot_t5      (Windows)\n"
+                 "  rm -rf models/prot_t5            (macOS/Linux)\n"
+                 "then re-run the snapshot_download command from README section 3.\n"
+                 "Verify afterwards - this must print %s:\n"
+                 "  certutil -hashfile models\\prot_t5\\pytorch_model.bin SHA256"
+                 % SHA256[:16])
+        elif exact < 500 * 1024 * 1024:
             fail("%s is only %.1f MB - far too small." % (w, have[w]),
-                 "A real ProtT5 encoder checkpoint is roughly 2.2-2.5 GB. This is a\n"
-                 "truncated download or a git-lfs pointer file. Download it again.")
+                 "A real ProtT5 encoder checkpoint is 2.25 GB. This is a truncated\n"
+                 "download or a git-lfs pointer file. Download it again.")
 
     # the actual load, only if transformers imported
     if "transformers" in versions and not fails:
