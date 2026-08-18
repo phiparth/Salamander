@@ -26,6 +26,55 @@ def ok(msg):
     print(OK + msg)
 
 
+# Windows NTSTATUS codes that arrive as process exit codes. A hard crash produces no Python
+# traceback at all, so the exit code is the only evidence of what happened.
+CRASH = {
+    3221225477: ("0xC0000005 ACCESS_VIOLATION",
+                 "A segfault inside a compiled library. Usually a broken install or a\n"
+                 "conflicting DLL of the same name found earlier on PATH - Anaconda,\n"
+                 "MATLAB, Intel tools and GPU drivers all ship libiomp5md.dll / mkl DLLs."),
+    3221225781: ("0xC0000135 DLL_NOT_FOUND",
+                 "A dependent DLL is missing. Install the Visual C++ Redistributable."),
+    3221225595: ("0xC000007B INVALID_IMAGE_FORMAT",
+                 "A 32-bit DLL was loaded into 64-bit Python, or the reverse."),
+    3221225725: ("0xC00000FD STACK_OVERFLOW", "Runaway recursion inside the library."),
+    1073741795: ("0xC000001D ILLEGAL_INSTRUCTION",
+                 "The CPU does not support an instruction the build requires, normally\n"
+                 "AVX2. Install an older build that does not assume it."),
+    3221225501: ("0xC000001D ILLEGAL_INSTRUCTION",
+                 "The CPU does not support an instruction the build requires, normally AVX2."),
+}
+
+
+def probe(label, code, timeout=600):
+    """Run a risky snippet in a SEPARATE interpreter and report how it ended.
+
+    Importing torch or loading a 2.4 GB checkpoint can kill the process outright rather
+    than raise. Doing it in a subprocess means this script survives to report the exit
+    code, which is the only clue such a crash leaves behind.
+    """
+    import subprocess
+    print("      %s ..." % label)
+    try:
+        r = subprocess.run([sys.executable, "-c", code], stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, timeout=timeout)
+    except Exception as e:  # noqa: BLE001
+        fail("%s could not be run: %s" % (label, e), "Unexpected; report this.")
+        return False
+    out = (r.stdout or b"").decode("utf-8", "replace").strip()
+    rc = r.returncode
+    if rc == 0:
+        ok("%s: %s" % (label, out.splitlines()[-1] if out else "OK"))
+        return True
+    if rc in CRASH:
+        name, why = CRASH[rc]
+        fail("%s CRASHED - exit code %d (%s)." % (label, rc, name), why)
+    else:
+        tail = out.splitlines()[-4:] if out else ["(no output)"]
+        fail("%s failed with exit code %d." % (label, rc), "\n".join(tail))
+    return False
+
+
 print("=" * 78)
 print("Salamander install check")
 print("=" * 78)
@@ -208,6 +257,19 @@ if tvv and tor:
     else:
         ok("torch %s and transformers %s are a workable pair." % (tor, tvv))
 
+# ---- 3c. does torch actually compute? -----------------------------------------------
+# Importing torch and using it are different tests. A CPU or DLL problem often survives the
+# import and kills the process at the first real matrix multiply, which is where ProtT5's
+# load lands. Separating the two says whether the problem is torch or the checkpoint.
+if "torch" in versions:
+    print("\n[3c] PyTorch runtime")
+    probe("torch imports and multiplies a 512x512 matrix",
+          "import torch\n"
+          "x = torch.randn(512, 512)\n"
+          "y = (x @ x).sum().item()\n"
+          "print('matmul ok, threads=%d' % torch.get_num_threads())",
+          timeout=300)
+
 # ---- 4. the ProtT5 weights ----------------------------------------------------------
 print("\n[4] ProtT5 weights")
 plm = os.environ.get("PLM")
@@ -280,14 +342,11 @@ else:
 
     # the actual load, only if transformers imported
     if "transformers" in versions and not fails:
-        print("\n      loading it (this takes 30-60 s and needs ~3 GB of RAM) ...")
-        try:
-            from transformers import T5EncoderModel
-            T5EncoderModel.from_pretrained(found)
-            ok("ProtT5 loaded successfully.")
-        except Exception as e:  # noqa: BLE001 - the message is the whole point
-            fail("ProtT5 failed to load: %s: %s" % (type(e).__name__, e),
-                 "Send this line to whoever maintains the repo - it names the cause.")
+        print("")
+        probe("ProtT5 loads (30-60 s, needs ~3 GB of RAM)",
+              "from transformers import T5EncoderModel\n"
+              "T5EncoderModel.from_pretrained(r'''%s''')\n"
+              "print('loaded')" % found)
     elif "transformers" in versions:
         print("\n      skipping the load test until the failures above are fixed.")
 
