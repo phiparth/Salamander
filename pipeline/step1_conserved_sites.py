@@ -37,7 +37,7 @@ def fetch_blast(seq, n, log, min_identity, length_band, email):
                            length_band=length_band, email=email, log=log)
 
 
-def align(query_name, query, homologs, log):
+def align(query_name, query, homologs, log, prefer="auto"):
     """One MSA over query + orthologs. FAMSA, falling back to Biopython if unavailable.
 
     Both aligners are compiled C++ extensions, so on Windows both fail together when the
@@ -45,15 +45,30 @@ def align(query_name, query, homologs, log):
     which reads like a missing package. Catching everything and naming the real cause is the
     difference between a two-minute fix and an evening.
     """
-    try:
-        from pyfamsa import Aligner, Sequence
-        recs = [Sequence(query_name.encode(), query.encode())]
-        recs += [Sequence(n.encode(), s.encode()) for n, s in homologs]
-        aln = Aligner(guide_tree="upgma").align(recs)
-        return [(r.id.decode(), r.sequence.decode()) for r in aln]
-    except Exception as e:  # noqa: BLE001 - ImportError, DLL failures, or a FAMSA crash
-        log("pyfamsa unavailable (%s: %s)" % (type(e).__name__, e))
-        log("falling back to pairwise alignment, which is approximate")
+    if prefer == "biopython":
+        log("skipping FAMSA (--aligner biopython)")
+    else:
+        try:
+            from pyfamsa import Aligner, Sequence
+            recs = [Sequence(query_name.encode(), query.encode())]
+            recs += [Sequence(n.encode(), s.encode()) for n, s in homologs]
+            log("aligning %d sequences with FAMSA ..." % len(recs))
+            aln = Aligner(guide_tree="upgma").align(recs)
+            return [(r.id.decode(), r.sequence.decode()) for r in aln]
+        except Exception as e:  # noqa: BLE001 - ImportError, DLL failure, or a FAMSA fault
+            log("pyfamsa unavailable (%s: %s)" % (type(e).__name__, e))
+            log("falling back to pairwise alignment, which is approximate")
+
+    def project(q_gapped, t_gapped):
+        """Ortholog residues in QUERY coordinates: one character per query residue.
+
+        Independent pairwise alignments cannot simply be stacked - each has its own gap
+        pattern, so column 40 of one row and column 40 of another describe different
+        positions. Projecting every alignment back onto the query gives every row the same
+        length and the same meaning per column, which is what conservation needs. Stacking
+        them raw froze 1 of 250 residues where FAMSA froze 124.
+        """
+        return "".join(t for q, t in zip(q_gapped, t_gapped) if q != "-")
 
     rows = None
     try:                                               # Biopython >= 1.80
@@ -62,7 +77,8 @@ def align(query_name, query, homologs, log):
                              open_gap_score=-10, extend_gap_score=-0.5)
         rows = [(query_name, query)]
         for nm, s in homologs:
-            rows.append((nm, str(al.align(query, s)[0][1])))
+            a = al.align(query, s)[0]
+            rows.append((nm, project(str(a[0]), str(a[1]))))
     except Exception as e:                             # noqa: BLE001
         try:                                           # Biopython < 1.84
             from Bio import pairwise2
@@ -70,7 +86,7 @@ def align(query_name, query, homologs, log):
             for nm, s in homologs:
                 a = pairwise2.align.globalms(query, s, 2, -1, -10, -0.5,
                                              one_alignment_only=True)[0]
-                rows.append((nm, a.seqB))
+                rows.append((nm, project(a.seqA, a.seqB)))
         except Exception as e2:                        # noqa: BLE001
             msg = "%s / %s" % (e, e2)
             hint = ""
@@ -83,11 +99,16 @@ def align(query_name, query, homologs, log):
             sys.exit("no working aligner: pyfamsa and Biopython both failed.\n  %s%s"
                      % (msg, hint))
 
-    # independent pairwise alignments can differ in length; conserved_columns needs a grid
-    width = max(len(s) for _, s in rows)
-    if len({len(s) for _, s in rows}) > 1:
-        log("  padding %d pairwise rows to %d columns" % (len(rows), width))
-        rows = [(n, s.ljust(width, "-")) for n, s in rows]
+    widths = {len(s) for _, s in rows}
+    if widths != {len(query)}:
+        sys.exit("pairwise projection produced rows of %s columns, expected %d - refusing "
+                 "to compute conservation from a misaligned grid" % (sorted(widths), len(query)))
+    log("  projected %d pairwise alignments onto %d query positions"
+        % (len(rows) - 1, len(query)))
+    log("  WARNING: pairwise alignment is much weaker than FAMSA here. On the ERa example")
+    log("  it froze 33 of 250 residues where FAMSA froze 124 - so it under-freezes, and")
+    log("  under-freezing means mutating positions that should have been protected. Use")
+    log("  this to confirm FAMSA is the problem, not to produce a design you rely on.")
     return rows
 
 
@@ -120,6 +141,9 @@ def main():
     p.add_argument("--length-band", type=float, default=2.0,
                    help="keep orthologs whose length is within [1/x, x] times the query")
     p.add_argument("--email", help="contact address for NCBI blastp (--source blast)")
+    p.add_argument("--aligner", default="auto", choices=["auto", "famsa", "biopython"],
+                   help="auto uses FAMSA; 'biopython' skips it, for CPUs where FAMSA's "
+                        "SIMD code crashes the process")
     p.add_argument("--og", help="OrthoDB orthogroup id, e.g. 4385266at2759; skips the "
                                "sequence search, which is the endpoint that breaks")
     p.add_argument("--gene", help="gene name, e.g. ESR1; resolves the family through "
@@ -157,7 +181,7 @@ def main():
                  "    --source local --family my_orthologs.fasta")
     log("using %d orthologs" % len(homologs))
 
-    rows = align(qname, qseq, homologs, log)
+    rows = align(qname, qseq, homologs, log, prefer=a.aligner)
     flags, detail = conserved_columns(rows, a.cons_thresh)
 
     # map alignment columns back onto query residue indices

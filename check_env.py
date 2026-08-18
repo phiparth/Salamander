@@ -45,6 +45,26 @@ if sys.version_info < (3, 9):
 else:
     ok("Python %s is new enough." % sys.version.split()[0])
 
+# FAMSA and PyTorch are both SIMD-compiled; on a CPU without AVX2 they do not raise, they
+# abort the process. Reported always, because a silent exit gives nothing else to go on.
+if sys.platform == "win32":
+    try:
+        import ctypes
+        _f = ctypes.windll.kernel32.IsProcessorFeaturePresent
+        _avx, _avx2 = bool(_f(39)), bool(_f(40))
+        print("      cpu        : AVX=%s AVX2=%s" % (_avx, _avx2))
+        if not _avx2:
+            fail("This CPU does not support AVX2.",
+                 "PyTorch wheels and pyfamsa are built assuming AVX2. Without it they\n"
+                 "do not raise an error - the process dies with no traceback at all,\n"
+                 "which is what a step 1 run ending at 'using N orthologs' looks like.\n"
+                 "Workarounds:\n"
+                 "  step 1:  add  --aligner biopython\n"
+                 "  torch :  pip install \"torch==2.4.1\""
+                 " --index-url https://download.pytorch.org/whl/cpu")
+    except Exception:  # noqa: BLE001 - diagnostic only
+        pass
+
 in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
 if in_venv:
     ok("Running inside a virtual environment (%s)." % sys.prefix)
