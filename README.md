@@ -531,8 +531,26 @@ Save it as `my_protein.fasta`.
 **Get a structure:**
 
 ```bash
-python pipeline/step0_get_structure.py --uniprot YOUR_ACCESSION --query my_protein.fasta --out structures/mine.pdb
+python pipeline/step0_get_structure.py --uniprot P22303 --query my_protein.fasta --out structures/mine.pdb
 ```
+
+> **`--uniprot` takes the ACCESSION, not the gene symbol.** `P22303`, not `ACHE` — the two
+> flags differ: step 1's `--gene` wants the symbol, step 0's `--uniprot` wants the accession.
+> A symbol here returns `HTTP Error 400: Bad Request`. Find yours by searching the gene
+> symbol at [uniprot.org](https://www.uniprot.org/); the accession is the short code in the
+> **Entry** column. Benchmark proteins: ESR1 `P03372`, TPH1 `P17752`, ACHE `P22303`,
+> SIRT6 `Q8N6T7`, DNMT3A `Q9Y6K1`, PRSS1 `P07477`, VPS26A `O75436`, STXBP1 `P61764`.
+>
+> **If your sequence is a mature chain or a domain**, it will not line up with the
+> full-length model. Step 0 locates it and renumbers automatically, but an initiator
+> methionine or an engineered residue makes it an inexact match — allow a few differences:
+>
+> ```bash
+> python pipeline/step0_get_structure.py --uniprot P22303 --query my_protein.fasta --out structures/mine.pdb --max-mismatch 2
+> ```
+>
+> hAChE is the worked example: the 549-residue mature chain sits at residues 31–579 of the
+> 614-residue model, differing only at the initiator methionine.
 
 **Step 1 — freeze the conserved sites.** Reads your FASTA; writes `conserved.json`,
 `alignment.fasta`, `orthologs.fasta`. Pass `--gene` with your protein's gene symbol —

@@ -191,6 +191,14 @@ def main():
             % (len(rows), len(rows[0][1])))
         return finish(a, log, qname, qseq, rows, homologs)
 
+    if a.gene and a.gene.upper() in ("YOUR_GENE", "YOUR-GENE", "GENE", "GENE_SYMBOL",
+                                     "YOUR_ACCESSION"):
+        sys.exit("--gene %s is the placeholder from the README, not a real value.\n"
+                 "\n"
+                 "  Replace it with your protein's gene symbol, e.g. --gene ACHE.\n"
+                 "  Benchmark proteins: ESR1, TPH1, ACHE, SIRT6, DNMT3A, PRSS1,\n"
+                 "  VPS26A, STXBP1." % a.gene)
+
     if a.source == "orthodb" and not (a.gene or a.og):
         sys.exit(
             "--source orthodb requires --gene (the gene symbol for your protein).\n"

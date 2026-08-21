@@ -25,7 +25,7 @@ while your FASTA is 1-250. Those do not match and step 3 will refuse to run. Use
 --renumber to renumber the output 1..L against your query, or fold the domain with ESMFold
 instead, which numbers from 1 by construction.
 """
-import argparse, json, os, sys, urllib.request
+import argparse, json, os, re, sys, urllib.request, urllib.error
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 from strip2.core import read_fasta, clean_seq  # noqa: E402
@@ -44,9 +44,79 @@ def get(url, data=None, timeout=300):
     return urllib.request.urlopen(req, timeout=timeout).read()
 
 
+# UniProt accession grammar, plus AlphaFold's own AF-<acc>-F1 form.
+ACC_RE = re.compile(r"^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$",
+                    re.I)
+AFID_RE = re.compile(r"^AF-[A-Z0-9]+-F[0-9]+$", re.I)
+
+
+def check_accession(acc):
+    """AlphaFold indexes by accession, not by gene symbol.
+
+    Step 1 takes --gene ACHE, so it is natural to hand --uniprot the same thing here. That
+    returns HTTP 400 'Invalid identifier format', which does not say what is wrong. Catching
+    it before the call, and naming the difference, is worth the six lines.
+    """
+    acc = acc.strip()
+    if ACC_RE.match(acc) or AFID_RE.match(acc):
+        return acc
+
+    # the README writes YOUR_ACCESSION where your value goes; it gets pasted as-is
+    if acc.upper() in ("YOUR_ACCESSION", "YOUR-ACCESSION", "ACCESSION",
+                       "YOUR_UNIPROT", "UNIPROT_ID", "YOUR_GENE"):
+        sys.exit(
+            "--uniprot %s is the placeholder from the README, not a real value.\n"
+            "\n"
+            "  Replace it with your protein's UniProt accession, e.g.:\n"
+            "    --uniprot P22303      acetylcholinesterase (ACHE)\n"
+            "    --uniprot P03372      estrogen receptor alpha (ESR1)\n"
+            "\n"
+            "  Look yours up by gene symbol at https://www.uniprot.org/ - the accession is\n"
+            "  the short code like P22303 shown as 'Entry' in the results.\n"
+            "\n"
+            "  Benchmark proteins:\n"
+            "    ESR1 P03372   TPH1 P17752   ACHE P22303   SIRT6 Q8N6T7\n"
+            "    DNMT3A Q9Y6K1   PRSS1 P07477   VPS26A O75436   STXBP1 P61764" % acc)
+    looks_like_gene = acc.isalnum() and acc.upper() == acc and not any(c.isdigit() for c in acc[:1])
+    msg = ["%r is not a UniProt accession." % acc,
+           "",
+           "  AlphaFold DB is indexed by ACCESSION (P22303, Q8N6T7, O75436) - a letter,",
+           "  then digits and letters, 6 or 10 characters. It is not the gene symbol.",
+           ""]
+    if looks_like_gene:
+        msg += ["  That looks like a gene symbol. Note the two flags differ:",
+                "    step 1  --gene ACHE       the gene symbol, for OrthoDB",
+                "    step 0  --uniprot P22303  the accession, for AlphaFold",
+                ""]
+    msg += ["  Find the accession by searching the gene symbol at uniprot.org, or:",
+            "    https://rest.uniprot.org/uniprotkb/search?query=gene:%s+AND+organism_id:9606&fields=accession"
+            % acc,
+            "",
+            "  Accessions for the benchmark proteins:",
+            "    ESR1 P03372   TPH1 P17752   ACHE P22303   SIRT6 Q8N6T7",
+            "    DNMT3A Q9Y6K1   PRSS1 P07477   VPS26A O75436   STXBP1 P61764"]
+    sys.exit("\n".join(msg))
+
+
 def from_alphafold(acc, log):
+    acc = check_accession(acc)
     log("querying AlphaFold DB for %s ..." % acc)
-    meta = json.loads(get(AFDB % acc, timeout=90).decode())
+    try:
+        raw = get(AFDB % acc, timeout=90)
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8", "replace")[:200]
+        except Exception:  # noqa: BLE001
+            pass
+        if e.code == 404:
+            raise SystemExit("AlphaFold DB has no model for %s.\n"
+                             "  Not every UniProt entry has one. Use --source esmfold to\n"
+                             "  predict it instead, or fetch an experimental structure from\n"
+                             "  rcsb.org and pass it to step 3 directly." % acc)
+        raise SystemExit("AlphaFold DB refused the request for %s: HTTP %d\n  %s"
+                         % (acc, e.code, body))
+    meta = json.loads(raw.decode())
     if not meta:
         raise SystemExit("AlphaFold DB has no entry for %s" % acc)
     m = meta[0]
@@ -216,7 +286,9 @@ def main():
         missing = [i for i in range(1, len(seq) + 1) if (a.chain, i) not in res]
         if not bad and not missing:
             log("\nOK: every residue 1-%d matches your query. Ready for step 3." % len(seq))
-        else:
+        elif missing or len(bad) > a.max_mismatch:
+            # step 3 verifies the residues it is about to mutate; wholesale disagreement
+            # here means the frames do not correspond at all
             log("\nNUMBERING MISMATCH - step 3 would refuse this structure:")
             if missing:
                 log("  %d query residues absent from the structure, first few: %s"
@@ -224,6 +296,16 @@ def main():
             for i, q, s in bad[:8]:
                 log("  residue %d: query has %s, structure has %s" % (i, q, s))
             log("  Fix: rerun with --renumber, or use --source esmfold, or trim the FASTA")
+        else:
+            # a handful of accepted differences: usable, with one caveat
+            log("\nUSABLE, with %d accepted difference(s):" % len(bad))
+            for i, q, s in bad[:8]:
+                log("  residue %d: query has %s, structure has %s" % (i, q, s))
+            log("  Step 3 checks only the residues it mutates, so this structure is fine")
+            log("  UNLESS a proposed mutation lands on one of the positions above - it")
+            log("  would then be scored against the structure's residue, not yours. Step 3")
+            log("  verifies that and stops if so. Common cause: your sequence is the mature")
+            log("  chain and the model is the full precursor, or vice versa.")
 
 
 if __name__ == "__main__":
