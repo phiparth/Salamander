@@ -2,7 +2,10 @@
 """Run all four steps end to end.
 
     python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/era.pdb \
-           --out work/era --cons-thresh 0.80 --wt-ratio 1.20 --ddg-cut 0.5 --repair
+           --out work/era --gene ESR1 --ddg-cut 0.5 --repair
+
+--gene is required: it is the gene symbol for your protein, and is how step 1 identifies
+the ortholog family in OrthoDB.
 
 Each step writes its own JSON into --out, so you can stop after any step, change one
 parameter and rerun only what follows. Embeddings and FoldX results are cached.
@@ -53,8 +56,8 @@ def main():
     p.add_argument("--length-band", type=float, default=2.0)
     p.add_argument("--extra-freeze", default="")
     p.add_argument("--email")
-    p.add_argument("--gene", help="gene name; avoids OrthoDB /blast (see step 1)")
-    p.add_argument("--og", help="OrthoDB orthogroup id; avoids OrthoDB /blast")
+    p.add_argument("--gene", help="REQUIRED with --source orthodb: gene symbol, e.g. ESR1")
+    p.add_argument("--og", help="advanced: exact orthogroup id, instead of --gene")
     p.add_argument("--alignment", help="a finished MSA; skips the ortholog search AND the "
                                       "aligner (see step 1)")
     p.add_argument("--aligner", default="auto", choices=["auto", "famsa", "biopython"])

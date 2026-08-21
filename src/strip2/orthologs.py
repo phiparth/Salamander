@@ -60,17 +60,18 @@ def _one_per_genus(members, query, n, min_identity, length_band, log):
 
 def orthodb_orthologs(query, n=10, min_identity=0.30, length_band=2.0, log=print,
                       og=None, gene=None):
-    """OrthoDB v12 REST: /blast -> gene, /genesearch -> orthogroups, /fasta -> members.
+    """OrthoDB v12 REST: /search -> orthogroups, /fasta -> members.
 
-    Two ways to skip the /blast step:
+    The family is named, not inferred:
 
-        og    an orthogroup id such as 4385266at2759 - goes straight to /fasta
         gene  a gene name such as ESR1 - resolved through /search
+        og    an orthogroup id such as 4385266at2759 - goes straight to /fasta
 
-    Both exist because /blast is the fragile part. It is the only endpoint that has to run
-    an alignment server-side, and it has returned HTTP 500 for extended periods while the
-    rest of the API stayed up. When that happens there is nothing to fix at this end, so
-    the useful thing is a route around it.
+    There used to be a third route: hand /blast the query sequence and let OrthoDB work out
+    which gene it is. That endpoint is the only one that runs an alignment on their server,
+    and it returns HTTP 500 - its own crash, "rapsearch: unhandled exception during
+    asyncio.run() shutdown" - on every API version while /search, /genesearch and /fasta
+    answer normally. It has been removed rather than left as a default that always fails.
     """
     import json as _json
     query = clean_seq(query)
@@ -96,28 +97,10 @@ def orthodb_orthologs(query, n=10, min_identity=0.30, length_band=2.0, log=print
             return []
         log("[ortho] %d orthogroup(s) matched: %s" % (len(ogs), ", ".join(ogs[:4])))
     else:
-        log("[ortho] OrthoDB sequence search (%d aa) ..." % len(query))
-        try:
-            b = _json.loads(api("/blast?seq=" + urllib.parse.quote(query)))
-        except Exception as e:  # noqa: BLE001 - a server-side outage, not our bug
-            log("[ortho] OrthoDB /blast is not responding: %s" % e)
-            log("[ortho] That endpoint runs the alignment on their server and fails")
-            log("[ortho] independently of the rest of the API. Ways around it:")
-            log("[ortho]   --gene ESR1                 look the family up by gene name")
-            log("[ortho]   --og 4385266at2759          use a known orthogroup id")
-            log("[ortho]   --source blast --email you@inst.edu    use NCBI blastp instead")
-            log("[ortho]   --source local --family my_orthologs.fasta   supply your own")
-            return []
-        if b.get("status") != "ok" or not isinstance(b.get("gene"), dict):
-            log("[ortho] OrthoDB found no gene match")
-            return []
-        gid = b["gene"]["gene_id"]["param"]
-        log("[ortho] matched %s; fetching orthogroups ..." % b["gene"]["gene_id"].get("id"))
-        time.sleep(1.1)                                # OrthoDB rate limit is 1 req/s
-        ogs = list(dict.fromkeys(re.findall(r"\b\d+at\d+\b", api("/genesearch?query=" + gid))))
-        if not ogs:
-            log("[ortho] no orthogroups returned")
-            return []
+        log("[ortho] no family given. OrthoDB needs --gene: it cannot identify the family")
+        log("[ortho] from the sequence alone (that endpoint is down on their side).")
+        log("[ortho]   --gene ESR1     the gene symbol for your protein")
+        return []
 
     best = None
     for og in ogs[:4]:                                 # try a few levels, keep the most diverse

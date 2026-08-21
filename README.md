@@ -432,18 +432,16 @@ Freeze the conserved sites. **Use this form** — `--gene` names the family expl
 python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era --gene ESR1
 ```
 
-> **Why `--gene` and not just `--query`?** Without it, step 1 identifies the family by sending
-> the sequence to OrthoDB's `/blast` endpoint — **and that endpoint is currently returning
-> HTTP 500.** It is the only one that runs an alignment on their server, and it fails while
-> `/search`, `/genesearch` and `/fasta` all answer normally; every API version (`v11`, `v12`,
-> `current`) gives the same 500. So it is an outage on their side, not a problem with your
-> install, and nothing at this end can fix it.
+> **`--gene` is required.** It is the gene symbol for your protein — `ESR1` here, `ACHE` for
+> acetylcholinesterase — and it is how the ortholog family is identified. Use the standard
+> symbol from [UniProt](https://www.uniprot.org/) or
+> [NCBI Gene](https://www.ncbi.nlm.nih.gov/gene/).
 >
-> Once `/blast` recovers you can drop `--gene` and the plain form works again:
->
-> ```bash
-> python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era
-> ```
+> OrthoDB could once work the family out from the sequence alone, via its `/blast` endpoint.
+> That endpoint now returns HTTP 500 from its own internal crash (`rapsearch: unhandled
+> exception`) on every API version, while `/search` and `/fasta` answer normally. It has been
+> removed rather than left as a default that always fails, so step 1 now tells you `--gene`
+> is missing immediately, without a network call.
 >
 > **If step 1 stops at `aligning N sequences with FAMSA ...` with no error at all**, FAMSA
 > crashed the process — it is SIMD-compiled and dies outright on CPUs without AVX2, so
@@ -459,10 +457,12 @@ python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out wo
 > machine — and pass the result the same way. `--aligner biopython` also exists, but it
 > under-freezes badly (33 residues where FAMSA finds 124) and is for diagnosis only.
 
-> Other routes that avoid `/blast`: `--og 4385266at2759` for a specific orthogroup (this also
-> lets you choose the taxonomic level — see step 1's options in section 9),
-> `--source blast --email you@institution.edu` for NCBI blastp, or
-> `--source local --family my_orthologs.fasta` to supply your own sequences.
+> **If your protein has no gene symbol**, or you already have the family:
+> `--source local --family my_orthologs.fasta` uses sequences you supply,
+> `--alignment my_alignment.fasta` uses an MSA you already have, and
+> `--source blast --email you@institution.edu` searches NCBI instead. `--og 4385266at2759`
+> names an exact orthogroup, which is also how you pin the taxonomic level — see step 1's
+> options in section 9.
 
 Propose mutations:
 
@@ -498,7 +498,7 @@ python pipeline/step0_get_structure.py --uniprot P03372 --query examples/era_lbd
 Run all four steps:
 
 ```bash
-python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/era.pdb --out work/era --repair
+python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/era.pdb --out work/era --gene ESR1 --repair
 ```
 
 **Final result:** `work/era/final.fasta`.
@@ -510,15 +510,10 @@ python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/
 > Reuse what is already done, and skip any step whose output exists:
 >
 > ```bash
-> python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/era.pdb --out work/era --repair --resume
+> python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/era.pdb --out work/era --gene ESR1 --repair --resume
 > ```
 >
-> Or give it the family up front, so step 1 never calls the failing endpoint. `--gene`,
-> `--og`, `--alignment` and `--aligner` are all forwarded to step 1:
->
-> ```bash
-> python pipeline/run_pipeline.py --query examples/era_lbd.fasta --pdb structures/era.pdb --out work/era --repair --gene ESR1
-> ```
+> `--gene`, `--og`, `--alignment` and `--aligner` are all forwarded to step 1.
 
 ---
 
@@ -578,7 +573,7 @@ python pipeline/step4_final_sequence.py --work work/mine --combined
 **Or run steps 1–4 in one go:**
 
 ```bash
-python pipeline/run_pipeline.py --query my_protein.fasta --pdb structures/mine.pdb --out work/mine --repair
+python pipeline/run_pipeline.py --query my_protein.fasta --pdb structures/mine.pdb --out work/mine --gene YOUR_GENE --repair
 ```
 
 ---
@@ -650,8 +645,8 @@ python pipeline/run_pipeline.py --query my_protein.fasta --pdb structures/mine.p
 | `--length-band` | `2.0` | keep orthologs within ×2 of query length |
 | `--extra-freeze` | — | force-freeze residues you know matter, e.g. `"25 159 175"` (1-based) |
 | `--email` | — | required by NCBI when using `--source blast` |
-| `--gene` | — | gene name, e.g. `ESR1`. Resolves the family through OrthoDB `/search`, skipping `/blast` |
-| `--og` | — | orthogroup id, e.g. `4385266at2759`. Goes straight to the members list |
+| `--gene` | **required** with `--source orthodb` | gene symbol, e.g. `ESR1`. How the ortholog family is identified |
+| `--og` | — | advanced: exact orthogroup id, e.g. `4385266at2759`, instead of `--gene`. Pins the taxonomic level |
 
 > **`--og` also lets you choose the taxonomic level, which matters more than it looks.** The
 > number after `at` is the level: `at7742` is vertebrates, `at2759` all eukaryotes. On the ERα

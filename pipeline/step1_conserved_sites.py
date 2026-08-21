@@ -6,12 +6,14 @@ Positions that are conserved across the ortholog family are almost always doing 
 site intact - in the ERa/hAChE benchmarks PROSS never mutated inside this band either.
 
     python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta \
-           --out work/era --cons-thresh 0.80 --n-orthologs 10
+           --out work/era --gene ESR1 --cons-thresh 0.80 --n-orthologs 10
+
+--gene is required with the default --source orthodb. It is the gene symbol for your
+protein (ESR1, ACHE, TPH1 ...) and is how the ortholog family is identified.
 
 Ortholog source (--source):
-    orthodb   OrthoDB orthologs via the OrthoDB REST API (default). Identify the family
-              with --gene or --og; without either, this needs OrthoDB's /blast endpoint,
-              which is currently failing on their server.
+    orthodb   OrthoDB orthologs via the OrthoDB REST API (default). REQUIRES --gene,
+              the gene symbol: OrthoDB can no longer identify a family from a sequence.
     blast     NCBI blastp, one hit per genus
     local     skip search, use --family (a FASTA you supply)
 
@@ -147,10 +149,11 @@ def main():
     p.add_argument("--aligner", default="auto", choices=["auto", "famsa", "biopython"],
                    help="auto uses FAMSA; 'biopython' skips it, for CPUs where FAMSA's "
                         "SIMD code crashes the process")
-    p.add_argument("--og", help="OrthoDB orthogroup id, e.g. 4385266at2759; skips the "
-                               "sequence search, which is the endpoint that breaks")
-    p.add_argument("--gene", help="gene name, e.g. ESR1; resolves the family through "
-                                 "OrthoDB /search instead of /blast")
+    p.add_argument("--og", help="advanced: an exact OrthoDB orthogroup id, e.g. "
+                               "4385266at2759. Use instead of --gene to pin the "
+                               "taxonomic level.")
+    p.add_argument("--gene", help="REQUIRED with --source orthodb. Gene symbol, e.g. "
+                                 "ESR1. This is how the ortholog family is identified.")
     p.add_argument("--extra-freeze", default="",
                    help="space-separated 1-based residue numbers to freeze regardless")
     a = p.parse_args()
@@ -187,6 +190,24 @@ def main():
         log("using a supplied alignment: %d sequences, %d columns"
             % (len(rows), len(rows[0][1])))
         return finish(a, log, qname, qseq, rows, homologs)
+
+    if a.source == "orthodb" and not (a.gene or a.og):
+        sys.exit(
+            "--source orthodb requires --gene (the gene symbol for your protein).\n"
+            "\n"
+            "  OrthoDB cannot identify the family from the sequence alone: the endpoint\n"
+            "  that did that (/blast) returns HTTP 500 from its own crash, on every API\n"
+            "  version, while the rest of the API works. So the family must be named.\n"
+            "\n"
+            "  Example:\n"
+            "    --gene ESR1        for the ERa example\n"
+            "    --gene ACHE        for acetylcholinesterase\n"
+            "\n"
+            "  Use the standard symbol from UniProt or NCBI Gene for your protein.\n"
+            "\n"
+            "  If your protein has no gene symbol, or you already have the family:\n"
+            "    --source local --family my_orthologs.fasta    your own sequences\n"
+            "    --alignment my_alignment.fasta                your own finished MSA")
 
     if a.source == "local":
         if not a.family:
