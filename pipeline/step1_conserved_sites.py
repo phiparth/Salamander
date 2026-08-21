@@ -20,7 +20,7 @@ Ortholog source (--source):
 Everything that changes the frozen set is a flag: --cons-thresh, --n-orthologs, --source,
 --min-identity, --length-band.
 """
-import argparse, json, os, sys, collections
+import argparse, json, os, re, sys, collections
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "src"))
 from strip2.core import read_fasta, read_alignment, write_fasta, clean_seq, AA20  # noqa: E402
@@ -31,6 +31,54 @@ def fetch_orthodb(seq, n, log, min_identity, length_band, og=None, gene=None):
     from strip2.orthologs import orthodb_orthologs
     return orthodb_orthologs(seq, n=n, min_identity=min_identity,
                              length_band=length_band, log=log, og=og, gene=gene)
+
+
+UNIPROT = "https://rest.uniprot.org/uniprotkb/%s.json?fields=gene_primary,protein_name"
+ACC_RE = re.compile(r"^([OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9]([A-Z][A-Z0-9]{2}[0-9]){1,2})$",
+                    re.I)
+
+
+def gene_from_accession(acc, log):
+    """Look up the gene symbol for a UniProt accession.
+
+    Convenience only. The orthologs still come from OrthoDB and nowhere else - this asks
+    UniProt one question, 'what is this accession's gene symbol', because you already have
+    the accession for step 0 and having to look the symbol up by hand is busywork.
+    """
+    import json as _json
+    import urllib.request
+
+    acc = acc.strip()
+    if not ACC_RE.match(acc):
+        sys.exit("--uniprot %r is not a UniProt accession (expected e.g. P22303)." % acc)
+    import time
+    log("[ortho] resolving %s to its gene symbol ..." % acc)
+    d, last = None, None
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(UNIPROT % acc,
+                                         headers={"User-Agent": "Mozilla/5.0 (salamander)"})
+            d = _json.loads(urllib.request.urlopen(req, timeout=60).read().decode())
+            break
+        except Exception as e:  # noqa: BLE001 - retried, then reported
+            last = e
+            if attempt < 2:
+                log("[ortho]   UniProt did not answer (%s); retry %d/2" % (e, attempt + 1))
+                time.sleep(3 * (attempt + 1))
+    if d is None:
+        sys.exit("could not reach UniProt to resolve %s: %s\n"
+                 "  This lookup only converts the accession to a gene symbol. Skip it by\n"
+                 "  passing the symbol directly, e.g. --gene ACHE." % (acc, last))
+    genes = [g.get("geneName", {}).get("value") for g in d.get("genes", [])]
+    genes = [g for g in genes if g]
+    if not genes:
+        sys.exit("UniProt lists no gene symbol for %s.\n"
+                 "  Some entries genuinely have none. Use --og <ORTHOGROUP ID>, or\n"
+                 "  --source local --family my_orthologs.fasta." % acc)
+    name = (d.get("proteinDescription", {}).get("recommendedName", {})
+             .get("fullName", {}).get("value", ""))
+    log("[ortho] %s is %s%s" % (acc, genes[0], (" (%s)" % name[:50]) if name else ""))
+    return genes[0]
 
 
 def fetch_blast(seq, n, log, min_identity, length_band, email):
@@ -149,6 +197,9 @@ def main():
     p.add_argument("--aligner", default="auto", choices=["auto", "famsa", "biopython"],
                    help="auto uses FAMSA; 'biopython' skips it, for CPUs where FAMSA's "
                         "SIMD code crashes the process")
+    p.add_argument("--uniprot", help="UniProt accession, e.g. P22303. Used only to look up "
+                                    "the gene symbol, so you can pass the same accession "
+                                    "you gave step 0 instead of finding the symbol yourself.")
     p.add_argument("--og", help="advanced: an exact OrthoDB orthogroup id, e.g. "
                                "4385266at2759. Use instead of --gene to pin the "
                                "taxonomic level.")
@@ -199,9 +250,14 @@ def main():
                  "  Benchmark proteins: ESR1, TPH1, ACHE, SIRT6, DNMT3A, PRSS1,\n"
                  "  VPS26A, STXBP1." % a.gene)
 
+    # an accession is as good as a symbol: resolve it and carry on
+    if a.source == "orthodb" and a.uniprot and not (a.gene or a.og):
+        a.gene = gene_from_accession(a.uniprot, log)
+
     if a.source == "orthodb" and not (a.gene or a.og):
         sys.exit(
-            "--source orthodb requires --gene (the gene symbol for your protein).\n"
+            "--source orthodb requires --gene (the gene symbol for your protein),\n"
+            "or --uniprot with the accession, which is looked up for you.\n"
             "\n"
             "  OrthoDB cannot identify the family from the sequence alone: the endpoint\n"
             "  that did that (/blast) returns HTTP 500 from its own crash, on every API\n"

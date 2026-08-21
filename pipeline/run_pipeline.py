@@ -57,6 +57,7 @@ def main():
     p.add_argument("--extra-freeze", default="")
     p.add_argument("--email")
     p.add_argument("--gene", help="REQUIRED with --source orthodb: gene symbol, e.g. ESR1")
+    p.add_argument("--uniprot", help="UniProt accession; step 1 looks up the gene symbol")
     p.add_argument("--og", help="advanced: exact orthogroup id, instead of --gene")
     p.add_argument("--alignment", help="a finished MSA; skips the ortholog search AND the "
                                       "aligner (see step 1)")
@@ -88,6 +89,8 @@ def main():
         s1 += ["--extra-freeze", a.extra_freeze]
     if a.gene:
         s1 += ["--gene", a.gene]
+    if a.uniprot:
+        s1 += ["--uniprot", a.uniprot]
     if a.og:
         s1 += ["--og", a.og]
     if a.alignment:

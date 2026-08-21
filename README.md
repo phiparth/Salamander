@@ -457,6 +457,17 @@ python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out wo
 > machine — and pass the result the same way. `--aligner biopython` also exists, but it
 > under-freezes badly (33 residues where FAMSA finds 124) and is for diagnosis only.
 
+> **You can pass the accession instead**, if you already have it for step 0 — step 1 looks
+> the symbol up for you, so `--uniprot P03372` and `--gene ESR1` do the same thing
+> (verified: identical frozen sets):
+>
+> ```bash
+> python pipeline/step1_conserved_sites.py --query examples/era_lbd.fasta --out work/era --uniprot P03372
+> ```
+>
+> That single call to UniProt only converts the accession to a symbol. The orthologs still
+> come from OrthoDB and nowhere else.
+>
 > **If your protein has no gene symbol**, or you already have the family:
 > `--source local --family my_orthologs.fasta` uses sequences you supply,
 > `--alignment my_alignment.fasta` uses an MSA you already have, and
@@ -664,6 +675,7 @@ python pipeline/run_pipeline.py --query my_protein.fasta --pdb structures/mine.p
 | `--extra-freeze` | — | force-freeze residues you know matter, e.g. `"25 159 175"` (1-based) |
 | `--email` | — | required by NCBI when using `--source blast` |
 | `--gene` | **required** with `--source orthodb` | gene symbol, e.g. `ESR1`. How the ortholog family is identified |
+| `--uniprot` | — | accession, e.g. `P03372`. Looked up to get the gene symbol; use instead of `--gene` |
 | `--og` | — | advanced: exact orthogroup id, e.g. `4385266at2759`, instead of `--gene`. Pins the taxonomic level |
 
 > **`--og` also lets you choose the taxonomic level, which matters more than it looks.** The
