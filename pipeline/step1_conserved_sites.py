@@ -220,12 +220,14 @@ def main():
         homologs = fetch_blast(qseq, a.n_orthologs, log, a.min_identity, a.length_band, a.email)
     if not homologs:
         sys.exit("no orthologs found.\n"
-                 "  If the message above says OrthoDB /blast is not responding, that is an\n"
-                 "  outage on their side, not a problem with your install. Use any of:\n"
-                 "    --gene <GENE NAME>            resolve the family by name\n"
-                 "    --og <ORTHOGROUP ID>          e.g. --og 4385266at2759\n"
-                 "    --source blast --email you@institution.edu\n"
-                 "    --source local --family my_orthologs.fasta")
+                 "  If OrthoDB matched no orthogroup, check the gene symbol: it must be the\n"
+                 "  standard one (ESR1, ACHE, TPH1), not a protein name or description.\n"
+                 "  Look it up on uniprot.org or ncbi.nlm.nih.gov/gene.\n"
+                 "\n"
+                 "  Otherwise:\n"
+                 "    --og <ORTHOGROUP ID>          name the group exactly, e.g. 4385266at2759\n"
+                 "    --source blast --email you@institution.edu    search NCBI instead\n"
+                 "    --source local --family my_orthologs.fasta    supply your own sequences")
     log("using %d orthologs" % len(homologs))
 
     rows = align(qname, qseq, homologs, log, prefer=a.aligner)
